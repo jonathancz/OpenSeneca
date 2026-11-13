@@ -58,8 +58,6 @@ jobs:
         run: npm install --global npm@11.19.0
 
       - name: Build frontend and bundle into package
-        env:
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
           set -euo pipefail
           cd frontend
