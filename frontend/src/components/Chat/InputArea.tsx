@@ -12,6 +12,7 @@ import {
 } from '../../lib/chat-telemetry';
 import { MicButton } from './MicButton';
 import { modKey } from '../HintBar';
+import { installEscToStop, isOverlayInDocument } from '../../lib/esc-stop';
 import { useSpeech } from '../../hooks/useSpeech';
 import type {
   ChatMessage,
@@ -172,16 +173,14 @@ export function InputArea() {
     resetStream();
   }, [resetStream]);
 
-  // Esc stops the reply that is streaming in this chat (shown in the hint bar).
+  // Esc stops the reply that is streaming in this chat (shown in the hint bar),
+  // but never when the same Esc closes an overlay. See lib/esc-stop.
   useEffect(() => {
     if (!isCurrentChatStreaming) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented) return;
-      if (useAppStore.getState().commandPaletteOpen) return;
-      stopStreaming();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return installEscToStop(window, {
+      isOverlayOpen: () => useAppStore.getState().commandPaletteOpen || isOverlayInDocument(),
+      onStop: stopStreaming,
+    });
   }, [isCurrentChatStreaming, stopStreaming]);
 
   const sendMessage = useCallback(async () => {

@@ -4,6 +4,7 @@ import { Zap, DollarSign } from 'lucide-react';
 import { ApprovalBell } from './ApprovalBell';
 import { useAppStore } from '../lib/store';
 import { fetchEnergy, fetchManagedAgents } from '../lib/api';
+import { startStatusPolling } from '../lib/status-poll';
 
 export const NAV_ITEMS = [
   { path: '/', label: 'Chat' },
@@ -51,24 +52,17 @@ export function TopBar({ apiReachable }: { apiReachable: boolean | null }) {
   const [energyJ, setEnergyJ] = useState<number | null>(null);
   const [hasRunningAgent, setHasRunningAgent] = useState(false);
 
-  // Energy counter and running agent state, polled quietly every 30 s.
+  // Energy counter and running agent state, polled quietly every 30 s. Started
+  // once per reachable backend; savings updates must not restart it.
   useEffect(() => {
     if (apiReachable === false) return;
-    const poll = () => {
-      fetchEnergy()
-        .then((d) => {
-          const j = (d as { total_energy_j?: number } | null)?.total_energy_j;
-          setEnergyJ(typeof j === 'number' ? j : null);
-        })
-        .catch(() => {});
-      fetchManagedAgents()
-        .then((agents) => setHasRunningAgent(agents.some((a) => a.status === 'running')))
-        .catch(() => {});
-    };
-    poll();
-    const id = setInterval(poll, 30000);
-    return () => clearInterval(id);
-  }, [apiReachable, savings]);
+    return startStatusPolling({
+      fetchEnergy,
+      fetchManagedAgents,
+      onEnergy: setEnergyJ,
+      onRunningAgent: setHasRunningAgent,
+    });
+  }, [apiReachable]);
 
   const saved = savings
     ? Math.max(0, ...savings.per_provider.map((p) => p.total_cost - savings.local_cost))
