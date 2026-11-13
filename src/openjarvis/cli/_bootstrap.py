@@ -71,7 +71,33 @@ def detect_cloud_keys() -> Optional[CloudProvider]:
 # Initial config writer
 # ---------------------------------------------------------------------------
 
-_DEFAULT_SOUL = "# Agent Persona\n\nYou are Jarvis, a helpful personal AI assistant.\n"
+_DEFAULT_SOUL = "# Agent Persona\n\nYou are Seneca, a helpful personal AI assistant.\n"
+# SOUL.md files seeded before the rename. Only these exact texts are migrated;
+# any edited persona is left alone.
+_LEGACY_DEFAULT_SOULS = (
+    "# Agent Persona\n\nYou are Jarvis, a helpful personal AI assistant.\n",
+)
+
+
+def migrate_default_persona(soul_path: Path) -> bool:
+    """Rewrite an untouched pre-rename SOUL.md with the Seneca persona.
+
+    Returns True when the file was migrated. A missing, unreadable or
+    user-edited file is never changed.
+    """
+    try:
+        current = soul_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    if current not in _LEGACY_DEFAULT_SOULS:
+        return False
+    try:
+        soul_path.write_text(_DEFAULT_SOUL, encoding="utf-8")
+    except OSError:
+        return False
+    return True
+
+
 _DEFAULT_MEMORY = "# Agent Memory\n\n"
 _DEFAULT_USER = "# User Profile\n\n"
 

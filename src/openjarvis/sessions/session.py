@@ -167,12 +167,35 @@ class SessionStore:
 
         return self._create_session(user_id, channel, channel_user_id, display_name)
 
+    def start_new_session(
+        self,
+        user_id: str,
+        *,
+        channel: str = "",
+        channel_user_id: str = "",
+        display_name: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Session:
+        """Start a fresh session for *user_id*; older sessions are kept."""
+        return self._create_session(
+            user_id, channel, channel_user_id, display_name, metadata=metadata
+        )
+
+    def set_metadata(self, session_id: str, metadata: Dict[str, Any]) -> None:
+        """Replace the metadata stored on a session."""
+        self._conn.execute(
+            "UPDATE sessions SET metadata = ? WHERE session_id = ?",
+            (json.dumps(metadata), session_id),
+        )
+        self._conn.commit()
+
     def _create_session(
         self,
         user_id: str,
         channel: str,
         channel_user_id: str,
         display_name: str,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Session:
         session_id = uuid.uuid4().hex[:16]
         now = time.time()
@@ -180,9 +203,17 @@ class SessionStore:
         self._conn.execute(
             "INSERT INTO sessions (session_id, user_id,"
             " display_name, channel_ids,"
-            " created_at, last_activity) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (session_id, user_id, display_name, json.dumps(channel_ids), now, now),
+            " created_at, last_activity, metadata) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                session_id,
+                user_id,
+                display_name,
+                json.dumps(channel_ids),
+                now,
+                now,
+                json.dumps(metadata or {}),
+            ),
         )
         self._conn.commit()
         return Session(
@@ -194,6 +225,7 @@ class SessionStore:
             ),
             created_at=now,
             last_activity=now,
+            metadata=dict(metadata or {}),
         )
 
     def save_message(

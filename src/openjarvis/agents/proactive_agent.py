@@ -273,12 +273,13 @@ def _build_notification_channel(channel_spec: str) -> Optional[Any]:
             except Exception:
                 _kwargs = {}
             instance = channel_cls(**_kwargs)
-            # Telegram.send() is self-contained, while connect() starts a
-            # getUpdates loop.  A second loop for the same bot token conflicts
-            # with the server's main listener.  Other channel implementations
-            # may initialize resources required by send() in connect(), so keep
-            # their established lifecycle intact.
-            if channel_type != "telegram":
+            # Telegram.send() and Discord.send() are self-contained REST
+            # calls, while connect() starts a getUpdates loop / a gateway
+            # session.  A second listener for the same bot token conflicts
+            # with (or duplicates) the server's main one.  Other channel
+            # implementations may initialize resources required by send() in
+            # connect(), so keep their established lifecycle intact.
+            if channel_type not in ("telegram", "discord"):
                 instance.connect()
             return instance
     except Exception:

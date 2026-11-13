@@ -85,6 +85,7 @@ The secrets file is passed to the `jarvis` container as environment variables:
 |----------------------|-----------------------------------------------------|
 | `OPENJARVIS_API_KEY` | Required. Bearer token for `/v1/*` and `/api/*`     |
 | `DISCORD_BOT_TOKEN`  | Optional. Token for the Discord channel             |
+| `DISCORD_ALLOWED_USER_IDS` | Optional. Discord user ids the bot answers (comma separated); the first is the owner |
 | `UNSPLASH_ACCESS_KEY` | Optional. Unsplash Access Key for the rotating hero photo (see below) |
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, ... | Optional. Cloud providers, used only when set |
 
@@ -120,6 +121,28 @@ services:
 ```
 
 The `--engine` and `--model` flags in the `command` take precedence over the engine and model in `config.toml`.
+
+### Private Discord assistant
+
+`docker-compose.discord.yml` turns the stack into a DM only Discord assistant for one person, with voice messages in both directions. It mounts `config.discord.toml` (channel enabled, `dm_only = true`, `voice_replies = "mirror"`, Kokoro voice `am_puck` at `voice_speed = 1.2`), caps the `jarvis` container at 4 CPUs (`OPENSENECA_JARVIS_CPUS`), since Kokoro and faster-whisper run there on CPU, and keeps the chat model loaded in Ollama for 30 minutes between messages (`OPENSENECA_OLLAMA_KEEP_ALIVE`) so a reply after a pause does not wait for a reload.
+
+1. Create the bot in the [Discord Developer Portal](https://discord.com/developers/applications): turn **Public Bot** off; no privileged gateway intents are needed.
+2. Make a private server, invite the bot with the `bot` scope and the Send Messages, Attach Files, Read Message History and Send Voice Messages permissions. A bot can only DM users it shares a server with.
+3. Enable Developer Mode in Discord, copy your user id, and add both values to the secrets file:
+
+    ```bash
+    DISCORD_BOT_TOKEN=...
+    DISCORD_ALLOWED_USER_IDS=123456789012345678
+    ```
+
+4. Start the stack with the override:
+
+    ```bash
+    docker compose -f deploy/docker/docker-compose.yml \
+      -f deploy/docker/docker-compose.discord.yml up -d --build
+    ```
+
+The first start downloads the faster-whisper `small` and Kokoro weights into the `jarvis-cache` volume (`preload_voice_models` loads them when the bot connects). See the [channels guide](../user-guide/channels.md#private-discord-assistant) for the behaviour.
 
 ## GPU Overrides
 

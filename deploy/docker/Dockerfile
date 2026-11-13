@@ -62,6 +62,16 @@ RUN pip install --no-cache-dir uv && \
     rm -f /tmp/all-requirements.txt && \
     uv pip install --system --no-deps "maturin>=1.12.6,<2"
 
+# Kokoro's English voices use spaCy's en_core_web_sm through misaki. Without it
+# misaki tries to pip install the model at runtime into the (non-persistent)
+# user site of the unprivileged user, so bake the version matching the locked
+# spaCy 3.8 into the image.
+ARG SPACY_EN_MODEL_URL=https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+RUN case ",${EXTRAS}," in \
+        *,voice,*) uv pip install --system --no-deps "${SPACY_EN_MODEL_URL}" && \
+            python3 -c "import spacy; spacy.load('en_core_web_sm')" ;; \
+    esac
+
 # Copy the source and the non-src force-include paths (see pyproject
 # [tool.hatch.build.targets.wheel.force-include]) before building the project.
 COPY src/ src/

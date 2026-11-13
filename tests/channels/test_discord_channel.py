@@ -247,9 +247,9 @@ class TestDisconnectStopsRealListener:
             def is_closed(self):
                 return self._closed
 
-        intents = SimpleNamespace(message_content=False)
+        intents = SimpleNamespace()
         discord = SimpleNamespace(
-            Intents=SimpleNamespace(default=lambda: intents),
+            Intents=SimpleNamespace(none=lambda: intents),
             Client=FakeClient,
         )
         ch = DiscordChannel(bot_token="my-bot-token")
@@ -321,9 +321,9 @@ class TestDisconnectStopsRealListener:
             def is_closed(self):
                 return self._closed
 
-        intents = SimpleNamespace(message_content=False)
+        intents = SimpleNamespace()
         discord = SimpleNamespace(
-            Intents=SimpleNamespace(default=lambda: intents),
+            Intents=SimpleNamespace(none=lambda: intents),
             Client=FakeClient,
         )
 

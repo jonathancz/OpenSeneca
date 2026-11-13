@@ -1,0 +1,33 @@
+# Private Discord assistant: DM only, one allowlisted user, voice in and out.
+# Used by docker-compose.discord.yml (mounted read only, OPENJARVIS_CONFIG).
+# Secrets stay in the secrets env file, never here:
+#   DISCORD_BOT_TOKEN=...          the bot token
+#   DISCORD_ALLOWED_USER_IDS=...   your Discord user id (comma separated list)
+
+[channel]
+enabled = true
+default_channel = "discord"
+
+[channel.discord]
+dm_only = true
+# "mirror": a voice message gets a voice reply, text gets text.
+voice_replies = "mirror"
+max_voice_seconds = 120
+# Kokoro TTS and faster-whisper STT, both on CPU.
+tts_backend = "kokoro"
+voice_id = "am_puck"
+# 20% louder than Kokoro's output (about +1.6 dB), soft-limited.
+volume = 1.2
+# Speaking rate; 1.0 sounded slow (about 160 words per minute).
+voice_speed = 1.2
+stt_model = "small"
+# Load Kokoro and faster-whisper at startup instead of on the first note.
+preload_voice_models = true
+
+# The web UI's speech-to-text: same CPU-only model, so one download serves both.
+[speech]
+model = "small"
+device = "cpu"
+compute_type = "int8"
+tts_backend = "kokoro"
+voice_id = "am_puck"

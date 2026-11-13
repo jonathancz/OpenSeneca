@@ -191,6 +191,20 @@ class JarvisSystem:
             prior_messages=prior_messages,
         )
 
+    def _persona_fingerprint(self) -> str:
+        """Hash of the identity the model is given (default prompt + SOUL.md)."""
+        import hashlib
+        from pathlib import Path
+
+        parts = [getattr(self.config.agent, "default_system_prompt", "") or ""]
+        soul_path = getattr(getattr(self.config, "memory_files", None), "soul_path", "")
+        if soul_path:
+            try:
+                parts.append(Path(soul_path).expanduser().read_text(encoding="utf-8"))
+            except OSError:
+                pass
+        return hashlib.sha256("\x00".join(parts).encode("utf-8")).hexdigest()[:16]
+
     def wire_channel(self, channel_bridge: Any) -> None:
         """Register a message handler on *channel_bridge* that routes every
         incoming message through this system (agent or engine) and replies.
@@ -217,6 +231,7 @@ class JarvisSystem:
             )
 
         _system = self  # capture for closure
+        persona = self._persona_fingerprint()
 
         def _on_channel_message(cm) -> None:
             session_key = f"{cm.channel}:{cm.conversation_id}"
@@ -225,6 +240,28 @@ class JarvisSystem:
                 channel=cm.channel,
                 channel_user_id=cm.sender,
             )
+            # Replaying turns written under another persona (for example
+            # "I'm OpenJarvis" before the rename to Seneca) makes small models
+            # keep the old identity despite the new system prompt. Start a
+            # fresh session instead; the old one stays in the store.
+            if session.metadata.get("persona") != persona:
+                if session.messages:
+                    logger.info(
+                        "Channel session %s ran under another persona;"
+                        " starting a new session",
+                        session.session_id,
+                    )
+                    session = _system.session_store.start_new_session(
+                        session_key,
+                        channel=cm.channel,
+                        channel_user_id=cm.sender,
+                        metadata={"persona": persona},
+                    )
+                else:
+                    session.metadata["persona"] = persona
+                    _system.session_store.set_metadata(
+                        session.session_id, session.metadata
+                    )
 
             prior_msgs: List[Message] = []
             for sm in session.messages:

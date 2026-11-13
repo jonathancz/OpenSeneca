@@ -1140,10 +1140,10 @@ class AgentConfig:
     system_prompt_path: str = ""  # path to system prompt file (.txt, .md)
     context_from_memory: bool = True  # inject relevant memory context into prompts
     default_system_prompt: str = (
-        "You are OpenJarvis, a helpful AI assistant running locally on the "
+        "You are Seneca, a helpful AI assistant running locally on the "
         "user's own hardware. You are not a cloud service, and you are not "
         "Claude, ChatGPT, Gemini, or any other branded assistant. If asked "
-        "who or what you are, identify yourself as OpenJarvis. Respond "
+        "who or what you are, identify yourself as Seneca. Respond "
         "helpfully, concisely, and accurately."
     )
 
@@ -1262,9 +1262,32 @@ class TelegramChannelConfig:
 
 @dataclass(slots=True)
 class DiscordChannelConfig:
-    """Per-channel config for Discord."""
+    """Per-channel config for Discord.
+
+    ``allowed_user_ids`` is a comma separated list of Discord user ids (or
+    env ``DISCORD_ALLOWED_USER_IDS``); the first one is the owner that
+    ``"captain"`` addresses. Empty means nobody is answered.
+    """
 
     bot_token: str = ""
+    allowed_user_ids: str = ""
+    dm_only: bool = True
+    # "mirror" (voice in, voice out; text in, text out), "always", "never".
+    voice_replies: str = "mirror"
+    max_voice_seconds: int = 120
+    # Outgoing voice (CPU). Empty voice_id uses the backend's default voice.
+    tts_backend: str = "kokoro"
+    voice_id: str = ""
+    # Kokoro at 1.0 is about 160 words per minute; 1.2 sounds brisker.
+    voice_speed: float = 1.2
+    # Gain on the synthesized voice (1.2 = 20% louder, about +1.6 dB), with a
+    # soft limiter so peaks do not distort.
+    volume: float = 1.2
+    # Incoming voice: faster-whisper on CPU, int8. Empty language = detect.
+    stt_model: str = "small"
+    stt_language: str = ""
+    # Load both speech models when the bot connects, not on the first note.
+    preload_voice_models: bool = True
 
 
 @dataclass(slots=True)
@@ -1631,10 +1654,10 @@ class SpeechConfig:
     # Text-to-speech. ``voice_id`` is interpreted by ``tts_backend`` only --
     # voice IDs are not portable between backends, so if voice output falls
     # back to a different backend that backend's own default voice is used.
-    # Kokoro IDs: bm_george / bm_lewis (British male), bf_emma / bf_isabella
-    # (British female), af_* / am_* (American).
+    # Kokoro IDs: am_puck (Seneca's voice: casual US male), am_michael,
+    # af_heart (American), bm_george / bm_lewis (British male), bf_emma.
     tts_backend: str = "kokoro"  # "kokoro", "openai_tts", "cartesia", "elevenlabs"
-    voice_id: str = "bm_george"
+    voice_id: str = "am_puck"
     voice_speed: float = 1.0
 
 
@@ -2367,6 +2390,11 @@ default_agent = "simple"
 
 # [channel.discord]
 # bot_token = ""  # Or set DISCORD_BOT_TOKEN env var
+# allowed_user_ids = ""  # Comma separated; or DISCORD_ALLOWED_USER_IDS env var
+# dm_only = true
+# voice_replies = "mirror"  # "mirror", "always", "never"
+# max_voice_seconds = 120
+# voice_speed = 1.2  # Kokoro speaking rate for voice replies
 
 # [channel.slack]
 # bot_token = ""  # Or set SLACK_BOT_TOKEN env var
