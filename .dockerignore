@@ -1,0 +1,58 @@
+# Keep the Docker build context small and free of secrets and local state.
+# Dockerfile.sandbox runs `COPY . .`, so this is a denylist, not an allowlist.
+
+# VCS and editor state
+.git
+.github
+.claude
+.scout
+.worktrees
+.idea
+.vscode
+
+# Python environments and caches
+.venv
+venv
+env
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+.coverage
+htmlcov
+dist
+build
+**/*.egg-info
+
+# Node and Rust build output (rebuilt inside the image)
+**/node_modules
+frontend/dist
+desktop/dist
+src/openjarvis/server/static
+rust/target
+**/src-tauri/target
+
+# Desktop app sources are not used by any image
+desktop
+
+# Docs site build output
+site
+
+# Local data, logs and results
+results
+logs
+/traces
+**/*.db
+**/*.sqlite
+**/*.log
+**/*.jsonl
+**/*.npz
+
+# Secrets (keep checked-in examples)
+**/.env
+**/.env.*
+!**/.env.example
+**/secrets.env
+**/*.pem
+**/*.key

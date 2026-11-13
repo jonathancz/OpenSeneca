@@ -1,17 +1,53 @@
+# Local, private, persistent stack: API server + web UI (jarvis) and Ollama.
+#
+#   docker compose -f deploy/docker/docker-compose.yml up -d --build
+#
+# Add docker-compose.ollama-nvidia.yml to run Ollama on an NVIDIA GPU. Secrets
+# come from an env file outside the repo (see secrets.env.example); non-secret
+# settings can go in deploy/docker/.env (see .env.example).
+
+# Fixed project name so volumes are the same whichever directory you run from.
+name: openseneca
+
 services:
   jarvis:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile
+      args:
+        # Discord channel plus local speech (faster-whisper STT, Kokoro TTS),
+        # all on CPU. Set OPENSENECA_EXTRAS=server for a lean API-only image.
+        EXTRAS: ${OPENSENECA_EXTRAS:-server,channel-discord,speech,voice}
+    # Engine and model are chosen explicitly through `jarvis serve` flags
+    # (nothing reads an engine environment variable). Override the model with
+    # OPENSENECA_MODEL and pull it into Ollama first.
+    command:
+      - serve
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --engine
+      - ollama
+      - --model
+      - ${OPENSENECA_MODEL:-qwen3.5:4b}
     ports:
-      - "8000:8000"
+      # Loopback only. The container binds 0.0.0.0 inside its own network
+      # namespace, so the server still requires OPENJARVIS_API_KEY.
+      - "127.0.0.1:${OPENSENECA_PORT:-8000}:8000"
+    env_file:
+      # OPENJARVIS_API_KEY (required), DISCORD_BOT_TOKEN and other secrets.
+      # Kept outside the repo; compose fails if the file is missing, and the
+      # server refuses to start on 0.0.0.0 without OPENJARVIS_API_KEY.
+      - path: ${OPENSENECA_SECRETS_FILE:-${HOME}/.config/openseneca/secrets.env}
+        required: true
     environment:
-      - OPENJARVIS_ENGINE_DEFAULT=ollama
       - OLLAMA_HOST=http://ollama:11434
-      # The container binds 0.0.0.0, so an API key is REQUIRED. Compose fails
-      # fast if OPENJARVIS_API_KEY is unset (set it in deploy/docker/.env —
-      # see .env.example, or `export` it). Generate one: `jarvis auth generate-key`.
-      - OPENJARVIS_API_KEY=${OPENJARVIS_API_KEY:?OPENJARVIS_API_KEY must be set (see deploy/docker/.env.example)}
+    volumes:
+      # Config, sessions, memory, traces and stored credentials.
+      - jarvis-data:/home/openjarvis/.openjarvis
+      # Downloaded speech model weights (faster-whisper, Kokoro).
+      - jarvis-cache:/home/openjarvis/.cache
     depends_on:
       ollama:
         condition: service_healthy
@@ -22,7 +58,8 @@ services:
     # predictable rollbacks (#563). Bump deliberately, not implicitly via :latest.
     image: ollama/ollama:0.30.10@sha256:bfc9c6d53cc6989aa5131a6fde6b162b2802d4d337657f3253b5f69579bddeee
     ports:
-      - "11434:11434"
+      # Loopback only: Ollama has no authentication.
+      - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
     volumes:
       - ollama-models:/root/.ollama
     healthcheck:
@@ -34,4 +71,6 @@ services:
     restart: unless-stopped
 
 volumes:
+  jarvis-data:
+  jarvis-cache:
   ollama-models:
