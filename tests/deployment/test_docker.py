@@ -131,7 +131,7 @@ class TestDockerFiles:
             "Dockerfile.sandbox",
         ]
         required_markers = [
-            "rustup toolchain install 1.88",
+            "rustup toolchain install 1.89",
             "maturin build --release",
             "rust/crates/openjarvis-python/Cargo.toml",
             "/tmp/openjarvis-rust-wheel/*.whl",
@@ -151,6 +151,21 @@ class TestDockerFiles:
             assert content.index("COPY rust/ rust/") < content.index(
                 "maturin build --release"
             ), f"{name}: rust workspace copied after native build"
+
+    def test_dockerfiles_match_rust_toolchain(self):
+        toolchain = tomllib.loads((ROOT / "rust" / "rust-toolchain.toml").read_text())[
+            "toolchain"
+        ]["channel"]
+        for path in _dockerfiles():
+            content = path.read_text()
+            assert f"rustup toolchain install {toolchain} " in content, (
+                f"{path.name}: Rust toolchain does not match rust-toolchain.toml"
+            )
+
+    def test_dockerignore_keeps_context_small(self):
+        content = (ROOT / ".dockerignore").read_text().splitlines()
+        for entry in [".git", ".venv", "**/node_modules", "rust/target", "**/.env"]:
+            assert entry in content, f".dockerignore is missing {entry!r}"
 
     def test_systemd_service_exists(self):
         assert (SYSTEMD_DIR / "openjarvis.service").is_file()
@@ -292,3 +307,55 @@ class TestSystemdHardening:
         # be re-granted write access or the server cannot persist config/state.
         content = self._service()
         assert "ReadWritePaths=" in content
+
+
+class TestLocalComposeStack:
+    """Private, persistent local stack (docker-compose.yml)."""
+
+    def _compose(self) -> str:
+        return (DOCKER_DIR / "docker-compose.yml").read_text()
+
+    def test_published_ports_bind_loopback(self):
+        for path in _compose_files():
+            in_ports = False
+            for ln in path.read_text().splitlines():
+                stripped = ln.strip()
+                if stripped.startswith("ports:"):
+                    in_ports = True
+                    continue
+                if in_ports and stripped.startswith("- "):
+                    assert stripped.startswith('- "127.0.0.1:'), (
+                        f"{path.name}: port not bound to loopback: {stripped!r}"
+                    )
+                elif in_ports and not stripped.startswith("#"):
+                    in_ports = False
+
+    def test_engine_and_model_are_explicit(self):
+        content = self._compose()
+        # Nothing in src/ reads OPENJARVIS_ENGINE_DEFAULT; use serve flags.
+        assert "OPENJARVIS_ENGINE_DEFAULT" not in content
+        assert "--engine" in content and "ollama" in content
+        assert "--model" in content and "qwen3.5:4b" in content
+
+    def test_server_data_is_persisted(self):
+        content = self._compose()
+        assert "jarvis-data:/home/openjarvis/.openjarvis" in content
+
+    def test_data_dir_created_before_user_switch(self):
+        # A named volume on a mount point missing from the image is created
+        # root-owned, and the non-root server then crashes (PermissionError).
+        for name in ["Dockerfile", "Dockerfile.gpu", "Dockerfile.gpu.rocm"]:
+            content = (DOCKER_DIR / name).read_text()
+            assert "/home/openjarvis/.openjarvis" in content, name
+            assert content.index("/home/openjarvis/.openjarvis") < content.index(
+                "USER openjarvis"
+            ), f"{name}: data dir created after USER"
+
+    def test_image_includes_discord_and_speech_extras(self):
+        content = self._compose()
+        assert "channel-discord" in content
+        assert "speech" in content and "voice" in content
+        dockerfile = (DOCKER_DIR / "Dockerfile").read_text()
+        assert "ARG EXTRAS" in dockerfile
+        # CPU image: torch comes from the CPU wheel index, not CUDA wheels.
+        assert "download.pytorch.org/whl/cpu" in dockerfile

@@ -25,8 +25,8 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
         sh -s -- -y --profile minimal --default-toolchain none && \
-    rustup toolchain install 1.88 --profile minimal && \
-    rustup default 1.88
+    rustup toolchain install 1.89 --profile minimal && \
+    rustup default 1.89
 
 WORKDIR /app
 
@@ -35,10 +35,31 @@ WORKDIR /app
 # requirements set; `--no-deps` then installs exactly that set. This is a
 # separate layer from the source copy so dependency installs stay cached when
 # only application code changes.
+#
+# EXTRAS is a comma separated list of pyproject optional-dependency groups. The
+# default keeps the image lean (API server only); docker-compose.yml passes
+# `server,channel-discord,speech,voice` for the local stack. If an extra pulls
+# in PyTorch (for example `voice`, for Kokoro TTS), the CUDA wheels from the
+# lockfile are dropped and the same torch version is installed from the
+# PyTorch CPU index instead, which saves several GB in this CPU-only image.
+ARG EXTRAS=server
 COPY pyproject.toml uv.lock README.md ./
 RUN pip install --no-cache-dir uv && \
-    uv export --frozen --no-dev --extra server --no-emit-project > requirements.txt && \
+    extra_flags=$(echo "${EXTRAS}" | tr ',' '\n' | sed '/^$/d; s/^/--extra /' | tr '\n' ' ') && \
+    uv export --frozen --no-dev ${extra_flags} --no-emit-project \
+        --no-hashes --no-annotate --no-header > /tmp/all-requirements.txt && \
+    torch_version=$(sed -n 's/^torch==\([^ ;]*\).*/\1/p' /tmp/all-requirements.txt) && \
+    gpu_packages=$(grep -E '^(torch|triton|nvidia-|cuda-)' /tmp/all-requirements.txt \
+        | grep -v '^nvidia-ml-py' | cut -d'=' -f1 | cut -d' ' -f1 | cut -d'[' -f1 \
+        | sed 's/^/--no-emit-package /' | tr '\n' ' ') && \
+    uv export --frozen --no-dev ${extra_flags} --no-emit-project ${gpu_packages} \
+        > requirements.txt && \
     uv pip install --system --no-deps -r requirements.txt && \
+    if [ -n "${torch_version}" ]; then \
+        uv pip install --system --no-deps \
+            --index-url https://download.pytorch.org/whl/cpu "torch==${torch_version}+cpu"; \
+    fi && \
+    rm -f /tmp/all-requirements.txt && \
     uv pip install --system --no-deps "maturin>=1.12.6,<2"
 
 # Copy the source and the non-src force-include paths (see pyproject
@@ -65,16 +86,29 @@ RUN uv pip install --system --no-deps . && \
 # Stage 3: Runtime
 FROM python:3.12.13-slim-bookworm@sha256:76d4b7b6305788c6b4c6a19d6a22a3921bf802e9af4d5e1e5bd771208dba74bf
 
+# Kokoro TTS (the `voice` extra) needs espeak-ng for out-of-dictionary words.
+ARG EXTRAS=server
+RUN case ",${EXTRAS}," in \
+        *,voice,*) apt-get update && \
+            apt-get install -y --no-install-recommends espeak-ng && \
+            rm -rf /var/lib/apt/lists/* ;; \
+    esac
+
 COPY --from=builder /usr/local /usr/local
 COPY --from=builder /app /app
 WORKDIR /app
 
 # Run as an unprivileged user — the server needs no root privileges, so dropping
 # them limits the blast radius of a compromise (#565). The app writes only to
-# $HOME (config/cache/state), which is owned by this user.
+# $HOME (config/cache/state), which is owned by this user. The data and cache
+# folders are created here, owned by that user, so a fresh named volume mounted
+# on them inherits the ownership; otherwise Docker creates the mount point as
+# root and the server fails with PermissionError on startup.
 RUN groupadd --system --gid 10001 openjarvis && \
     useradd --system --uid 10001 --gid openjarvis \
-        --create-home --home-dir /home/openjarvis openjarvis
+        --create-home --home-dir /home/openjarvis openjarvis && \
+    install -d -m 700 -o openjarvis -g openjarvis \
+        /home/openjarvis/.openjarvis /home/openjarvis/.cache
 ENV HOME=/home/openjarvis
 USER openjarvis
 

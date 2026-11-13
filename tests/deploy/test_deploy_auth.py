@@ -20,17 +20,30 @@ def _read(rel: str) -> str:
     return (DEPLOY / rel).read_text()
 
 
-def test_docker_compose_requires_api_key():
+def test_docker_compose_requires_secrets_env_file():
     text = _read("docker/docker-compose.yml")
-    # The container binds 0.0.0.0, so the key must be a *required* variable
-    # (compose's ${VAR:?...} fails fast when unset).
+    # The container binds 0.0.0.0, so the key comes from a *required* env file
+    # kept outside the repo; compose fails fast when it is missing and
+    # check_bind_safety refuses to start without OPENJARVIS_API_KEY.
+    assert "env_file:" in text
+    assert "required: true" in text
+    assert ".config/openseneca/secrets.env" in text
+    # The key must never be inlined into the compose file.
+    assert "OPENJARVIS_API_KEY=" not in text
+
+
+def test_docker_secrets_example_has_no_real_values():
+    text = _read("docker/secrets.env.example")
     assert "OPENJARVIS_API_KEY" in text
-    assert "OPENJARVIS_API_KEY:?" in text
+    for line in text.splitlines():
+        if line.startswith("#") or "=" not in line:
+            continue
+        # Active (uncommented) entries must be empty placeholders.
+        assert line.split("=", 1)[1] == "", f"secrets example sets a value: {line!r}"
 
 
 def test_docker_env_example_present():
     assert (DEPLOY / "docker" / ".env.example").is_file()
-    assert "OPENJARVIS_API_KEY" in _read("docker/.env.example")
 
 
 def test_systemd_unit_binds_public_and_requires_env_file():

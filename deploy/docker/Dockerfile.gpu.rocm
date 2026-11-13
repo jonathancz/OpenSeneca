@@ -32,8 +32,8 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
         sh -s -- -y --profile minimal --default-toolchain none && \
-    rustup toolchain install 1.88 --profile minimal && \
-    rustup default 1.88
+    rustup toolchain install 1.89 --profile minimal && \
+    rustup default 1.89
 
 WORKDIR /app
 
@@ -79,6 +79,8 @@ WORKDIR /app
 RUN groupadd --system --gid 10001 openjarvis && \
     useradd --system --uid 10001 --gid openjarvis \
         --create-home --home-dir /home/openjarvis openjarvis && \
+    install -d -m 700 -o openjarvis -g openjarvis \
+        /home/openjarvis/.openjarvis /home/openjarvis/.cache && \
     (getent group video  >/dev/null || groupadd --system video) && \
     (getent group render >/dev/null || groupadd --system render) && \
     usermod -aG video,render openjarvis

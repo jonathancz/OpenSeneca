@@ -18,7 +18,7 @@ RUST_MISSING_HINT = (
     "Memory backend unavailable: the native `openjarvis_rust` extension is not "
     "installed in this environment. Build it into the venv that runs the server "
     "with `uv run maturin develop -m rust/crates/openjarvis-python/Cargo.toml` "
-    "(needs rustc >= 1.88), then restart. Verify with "
+    "(needs rustc >= 1.89), then restart. Verify with "
     '`python -c "from openjarvis._rust_bridge import RUST_AVAILABLE; '
     'print(RUST_AVAILABLE)"`.'
 )
