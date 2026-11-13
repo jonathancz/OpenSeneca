@@ -5,7 +5,7 @@ import type { PendingApproval } from '../lib/api';
 
 const TIER_STYLES: Record<string, { label: string; color: string; bg: string }> = {
   trivial: { label: 'Trivial', color: 'var(--color-text-secondary)', bg: 'color-mix(in srgb, var(--color-text-secondary) 10%, transparent)' },
-  low:     { label: 'Low',     color: '#3b82f6',                    bg: 'rgba(59,130,246,0.12)' },
+  low:     { label: 'Low',     color: 'var(--color-text)',          bg: 'rgba(255,255,255,0.06)' },
   medium:  { label: 'Medium',  color: 'var(--color-warning)',       bg: 'color-mix(in srgb, var(--color-warning) 12%, transparent)' },
   high:    { label: 'High',    color: 'var(--color-error)',         bg: 'color-mix(in srgb, var(--color-error) 12%, transparent)' },
 };
@@ -75,14 +75,16 @@ export function ApprovalBell() {
   const count = approvals.length;
 
   return (
-    <div ref={containerRef} className="fixed top-2 right-3 z-40">
+    <div ref={containerRef} className="relative z-40">
       {/* Bell trigger */}
       <button
         onClick={() => setOpen(o => !o)}
-        className="relative p-2 rounded-lg transition-colors cursor-pointer"
+        className="relative w-9 h-9 flex items-center justify-center rounded-full transition-colors cursor-pointer"
         title="Agent approvals"
+        aria-label="Agent approvals"
         style={{
           color: count > 0 ? 'var(--color-text)' : 'var(--color-text-secondary)',
+          border: '1px solid var(--color-border)',
           background: open
             ? 'var(--color-bg-tertiary)'
             : count > 0
@@ -90,11 +92,11 @@ export function ApprovalBell() {
             : 'transparent',
         }}
       >
-        <Bell size={17} />
+        <Bell size={15} strokeWidth={1.5} />
         {count > 0 && (
           <span
             className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center rounded-full text-[10px] font-bold px-1 leading-none"
-            style={{ background: 'var(--color-error)', color: '#fff' }}
+            style={{ background: 'var(--color-error)', color: 'var(--color-on-accent)' }}
           >
             {count > 99 ? '99+' : count}
           </span>
@@ -104,7 +106,7 @@ export function ApprovalBell() {
       {/* Dropdown */}
       {open && (
         <div
-          className="absolute right-0 top-full mt-1 rounded-xl shadow-2xl overflow-hidden flex flex-col"
+          className="absolute right-0 top-full mt-2 rounded-2xl shadow-2xl overflow-hidden flex flex-col"
           style={{
             width: '340px',
             maxHeight: '500px',
@@ -170,7 +172,7 @@ export function ApprovalBell() {
                       </span>
                       <div className="flex items-center gap-2">
                         <span
-                          className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded"
+                          className="text-[11px] font-medium px-2 py-0.5 rounded-full"
                           style={{ background: tier.bg, color: tier.color }}
                         >
                           {tier.label}

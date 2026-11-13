@@ -85,7 +85,12 @@ The secrets file is passed to the `jarvis` container as environment variables:
 |----------------------|-----------------------------------------------------|
 | `OPENJARVIS_API_KEY` | Required. Bearer token for `/v1/*` and `/api/*`     |
 | `DISCORD_BOT_TOKEN`  | Optional. Token for the Discord channel             |
+| `UNSPLASH_ACCESS_KEY` | Optional. Unsplash Access Key for the rotating hero photo (see below) |
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, ... | Optional. Cloud providers, used only when set |
+
+### Hero photo
+
+The web UI shows one large photo behind the dashboard hero and the empty chat, darkened into the palette. With `UNSPLASH_ACCESS_KEY` set, the server fetches one photo from Unsplash every 6 hours for the theme chosen in Settings, caches the file and its metadata under `<data dir>/hero/` (the `jarvis-data` volume) and serves it at `/v1/hero/image`. The key stays on the server: it is never logged, cached or sent to the browser. The UI credits the photographer and Unsplash with referral links, and the server triggers the photo's download endpoint once per photo, as the Unsplash API guidelines ask. Without a key, or while offline, a few bundled public domain NASA photos rotate on the same clock. Settings > Appearance turns rotation off or changes the theme.
 
 ### Image extras
 

@@ -270,9 +270,9 @@ export function CommandPalette() {
   };
 
   const TAB_LABELS: Record<Tab, string> = {
-    installed: `Installed Models (${models.length})`,
+    installed: `Installed models (${models.length})`,
     catalogue: 'Download',
-    cloud: 'Cloud Models',
+    cloud: 'Cloud models',
   };
 
   return (
@@ -280,29 +280,28 @@ export function CommandPalette() {
       className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]"
       onClick={() => setCommandPaletteOpen(false)}
     >
-      <div className="fixed inset-0" style={{ background: 'rgba(0,0,0,0.5)' }} />
+      <div className="fixed inset-0" style={{ background: 'rgba(5,5,6,0.62)', backdropFilter: 'blur(3px)' }} />
 
       <div
-        className="relative w-full max-w-lg rounded-xl overflow-hidden"
+        className="relative w-full max-w-xl rounded-2xl overflow-hidden"
         style={{
-          background: 'var(--color-surface)',
+          background: 'var(--card-surface)',
           border: '1px solid var(--color-border)',
           boxShadow: 'var(--shadow-lg)',
         }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Tabs */}
-        <div className="flex" style={{ borderBottom: '1px solid var(--color-border)' }}>
+        <div className="flex items-center gap-1 px-3 py-3" style={{ borderBottom: '1px solid var(--color-border)' }} role="tablist">
           {(['installed', 'catalogue', 'cloud'] as Tab[]).map((t) => (
             <button
               key={t}
+              role="tab"
+              aria-selected={tab === t}
+              data-active={tab === t}
               onClick={() => setTab(t)}
-              className="flex-1 px-3 py-2.5 text-xs font-medium transition-colors cursor-pointer"
-              style={{
-                color: tab === t ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
-                borderBottom: tab === t ? '2px solid var(--color-accent)' : '2px solid transparent',
-                background: 'transparent',
-              }}
+              className="sn-tab"
+              style={{ height: 30, padding: '0 14px', fontSize: 13 }}
             >
               {TAB_LABELS[t]}
             </button>
@@ -385,12 +384,13 @@ export function CommandPalette() {
                         <Cpu size={16} style={{ color: isActive ? 'var(--color-accent)' : 'var(--color-text-tertiary)' }} />
                       )}
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm truncate" style={{ color: isActive ? 'var(--color-accent)' : 'var(--color-text)', fontWeight: isActive ? 500 : 400 }}>
+                        <div className="text-sm truncate" style={{ color: 'var(--color-text)', fontWeight: isActive ? 500 : 400 }}>
                           {model.id}
                         </div>
                       </div>
                       {isActive && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: 'var(--color-accent-subtle)', color: 'var(--color-accent)' }}>
+                        <span className="sn-pill" style={{ height: 20, fontSize: 11, color: 'var(--color-text)' }}>
+                          <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--color-accent)' }} />
                           Active
                         </span>
                       )}
@@ -533,13 +533,13 @@ export function CommandPalette() {
                               key={model.id}
                               onClick={() => handleSelect(model.id)}
                               className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left cursor-pointer transition-colors"
-                              style={{ background: isActive ? 'var(--color-accent-subtle)' : 'transparent' }}
+                              style={{ background: isActive ? 'var(--color-bg-tertiary)' : 'transparent' }}
                               onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = 'var(--color-bg-secondary)'; }}
                               onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
                             >
                               <Cloud size={12} style={{ color: isActive ? 'var(--color-accent)' : 'var(--color-text-tertiary)' }} />
                               <div className="flex-1 min-w-0">
-                                <div className="text-xs truncate" style={{ color: isActive ? 'var(--color-accent)' : 'var(--color-text)', fontWeight: isActive ? 500 : 400 }}>
+                                <div className="text-xs truncate" style={{ color: 'var(--color-text)', fontWeight: isActive ? 500 : 400 }}>
                                   {model.id}
                                 </div>
                                 <div className="text-[10px] truncate" style={{ color: 'var(--color-text-tertiary)' }}>
@@ -547,7 +547,8 @@ export function CommandPalette() {
                                 </div>
                               </div>
                               {isActive && (
-                                <span className="text-[9px] px-1.5 py-0.5 rounded-full shrink-0" style={{ background: 'var(--color-accent-subtle)', color: 'var(--color-accent)' }}>
+                                <span className="sn-pill shrink-0" style={{ height: 18, fontSize: 10.5, color: 'var(--color-text)' }}>
+                                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--color-accent)' }} />
                                   Active
                                 </span>
                               )}
@@ -565,19 +566,19 @@ export function CommandPalette() {
 
         {/* Footer */}
         <div
-          className="flex items-center gap-4 px-4 py-2 text-[11px]"
+          className="flex items-center gap-4 px-4 py-2.5 text-xs"
           style={{ borderTop: '1px solid var(--color-border)', color: 'var(--color-text-tertiary)' }}
         >
           {tab === 'installed' ? (
             <>
-              <span><kbd className="font-mono">↑↓</kbd> Navigate</span>
-              <span><kbd className="font-mono">Enter</kbd> Select</span>
-              <span><kbd className="font-mono">Esc</kbd> Close</span>
+              <span className="flex items-center gap-1.5"><kbd className="sn-kbd">↑↓</kbd> Navigate</span>
+              <span className="flex items-center gap-1.5"><kbd className="sn-kbd">Enter</kbd> Select</span>
+              <span className="flex items-center gap-1.5"><kbd className="sn-kbd">Esc</kbd> Close</span>
             </>
           ) : tab === 'catalogue' ? (
             <span>Models are downloaded from the Ollama registry</span>
           ) : (
-            <span>API keys are stored locally and never sent to OpenJarvis servers</span>
+            <span>API keys are stored locally and never sent to Seneca servers</span>
           )}
         </div>
       </div>

@@ -66,7 +66,7 @@ import { SOURCE_CATALOG } from '../types/connectors';
 import type { ConnectRequest } from '../types/connectors';
 import { listConnectors, connectSource } from '../lib/connectors-api';
 import type { ToolCallInfo } from '../types';
-import { ToolCallCard } from '../components/Chat/ToolCallCard';
+import { ToolCallCard, ToolCallList } from '../components/Chat/ToolCallCard';
 import { getAgentSchedule, normalizeAgentSchedule } from '../lib/agent-schedule';
 
 // ---------------------------------------------------------------------------
@@ -493,8 +493,6 @@ function ToolsPicker({
                       'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
                     fontSize: 9.5,
                     color: 'var(--color-text-tertiary)',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.1em',
                   }}
                 >
                   <span style={{ opacity: 0.5 }}>─</span>
@@ -785,7 +783,7 @@ function LaunchWizard({
       <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
         <div className="rounded-xl p-6 w-full max-w-lg" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold" style={{ color: 'var(--color-text)' }}>New Agent — Choose Template</h2>
+            <h2 className="text-[20px] font-light" style={{ color: 'var(--color-text)' }}>New agent: choose a template</h2>
             <button onClick={onClose} className="p-1 rounded hover:bg-opacity-10" style={{ color: 'var(--color-text-tertiary)' }}><X size={18} /></button>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -1207,16 +1205,15 @@ function AgentCard({
   return (
     <div
       onClick={onClick}
-      className="p-4 rounded-lg cursor-pointer transition-colors"
-      style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}
-      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--color-accent)')}
+      className="sn-card p-5 cursor-pointer"
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--color-border-strong)')}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--color-border)')}
     >
       {/* Row 1: Name + status dot */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2 min-w-0">
-          <Bot size={16} style={{ color: 'var(--color-accent)', flexShrink: 0 }} />
-          <span className="font-medium text-sm truncate" style={{ color: 'var(--color-text)' }}>
+          <Bot size={16} strokeWidth={1.5} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />
+          <span className="text-[15px] truncate" style={{ color: 'var(--color-text)' }}>
             {agent.name}
           </span>
         </div>
@@ -1289,10 +1286,10 @@ function AgentCard({
         <button
           onClick={() => onRun(agent.id)}
           className="flex items-center gap-1 px-2 py-1 rounded text-xs cursor-pointer transition-colors"
-          style={{ background: 'var(--color-accent)' + '15', color: 'var(--color-accent)' }}
+          style={{ background: 'var(--color-accent-subtle)', color: 'var(--color-accent)' }}
           title="Run now"
         >
-          <Zap size={11} /> Run Now
+          <Zap size={11} /> Run now
         </button>
         {canPause && (
           <button
@@ -1361,7 +1358,7 @@ function AgentInstructionSection({ agent, onAgentUpdated }: { agent: ManagedAgen
           <button
             onClick={() => { setDraft(currentInstruction); setEditing(true); }}
             className="text-xs px-2 py-0.5 rounded cursor-pointer"
-            style={{ color: 'var(--color-accent)', border: '1px solid var(--color-accent)', opacity: 0.8 }}
+            style={{ color: 'var(--color-text-secondary)', border: '1px solid var(--color-input-border)' }}
           >
             Edit
           </button>
@@ -1510,8 +1507,8 @@ function AgentConfigGrid({ agent, onAgentUpdated }: { agent: ManagedAgent; onAge
           onClick={startEditingModel}
           className="text-xs px-2 py-0.5 rounded cursor-pointer"
           style={{
-            color: modelAvailable === 'unavailable' ? 'var(--color-error)' : 'var(--color-accent)',
-            border: `1px solid ${modelAvailable === 'unavailable' ? 'var(--color-error)' : 'var(--color-accent)'}`,
+            color: modelAvailable === 'unavailable' ? 'var(--color-error)' : 'var(--color-text-secondary)',
+            border: `1px solid ${modelAvailable === 'unavailable' ? 'var(--color-error)' : 'var(--color-input-border)'}`,
             opacity: 0.8,
           }}
         >
@@ -1796,7 +1793,7 @@ function InteractTab({ agentId, agentStatus, onRunStateChange }: { agentId: stri
           className="flex items-center gap-2 text-sm font-medium"
           style={{ color: 'var(--color-text)' }}
         >
-          <Activity size={14} style={{ color: 'var(--color-accent)' }} />
+          <Activity size={14} style={{ color: 'var(--color-text-tertiary)' }} />
           Activity trace
         </div>
         <div
@@ -1856,7 +1853,9 @@ function InteractTab({ agentId, agentStatus, onRunStateChange }: { agentId: stri
           <>
             {liveItems.map((it) =>
               it.kind === 'tool' ? (
-                <ToolCallCard key={it.id} toolCall={it.tool} />
+                <div key={it.id} className="sn-card px-4" style={{ borderRadius: 'var(--radius-lg)' }}>
+                  <ToolCallCard toolCall={it.tool} />
+                </div>
               ) : (
                 <div
                   key={it.id}
@@ -1883,11 +1882,7 @@ function InteractTab({ agentId, agentStatus, onRunStateChange }: { agentId: stri
           /* IDLE view — last run's trace + findings */
           <>
             {traceSteps.length > 0 && (
-              <div className="space-y-2">
-                {traceSteps.map((s, i) => (
-                  <ToolCallCard key={i} toolCall={stepToToolCall(s, i)} />
-                ))}
-              </div>
+              <ToolCallList toolCalls={traceSteps.map((s, i) => stepToToolCall(s, i))} />
             )}
             {findings ? (
               <div
@@ -2073,7 +2068,7 @@ function ChannelsTab({ agentId }: { agentId: string }) {
               }}>
                 <span style={{ fontSize: 20 }}>{iconMap[c.connector_id] || '\uD83D\uDD17'}</span>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>
+                  <div style={{ fontSize: 14, fontWeight: 500 }}>
                     {c.display_name}
                   </div>
                   <div style={{ fontSize: 12, color: c.chunks > 0 ? 'var(--color-success)' : 'var(--color-warning)' }}>
@@ -2118,7 +2113,7 @@ function ChannelsTab({ agentId }: { agentId: string }) {
                     >
                       <div style={{
                         color: 'var(--color-accent-purple)', fontSize: 10,
-                        fontWeight: 600, marginBottom: 3,
+                        fontWeight: 500, marginBottom: 3,
                       }}>
                         STEP {i + 1}
                       </div>
@@ -2189,7 +2184,7 @@ function ChannelsTab({ agentId }: { agentId: string }) {
                 >
                   <span style={{ fontSize: 20 }}>{iconMap[c.connector_id] || '\uD83D\uDD17'}</span>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600,
+                    <div style={{ fontSize: 14, fontWeight: 500,
                       color: 'var(--color-text-secondary)' }}>
                       {c.display_name}
                     </div>
@@ -2223,7 +2218,7 @@ function ChannelsTab({ agentId }: { agentId: string }) {
                       >
                         <div style={{
                           color: 'var(--color-accent-purple)', fontSize: 10,
-                          fontWeight: 600, marginBottom: 3,
+                          fontWeight: 500, marginBottom: 3,
                         }}>
                           STEP {i + 1}
                         </div>
@@ -2374,11 +2369,11 @@ const MESSAGING_CHANNELS: MessagingChannelConfig[] = [
     setupSteps: [
       '1. Go to api.slack.com/apps → click "Create New App" → choose "From an app manifest"',
       '2. Select your workspace. When asked for the manifest format, choose JSON. Then paste the manifest below (click "Copy" to copy it):',
-      'COPYABLE:{"display_information":{"name":"OpenJarvis"},"features":{"app_home":{"home_tab_enabled":true,"messages_tab_enabled":true,"messages_tab_read_only_enabled":false},"bot_user":{"display_name":"OpenJarvis","always_online":true}},"oauth_config":{"scopes":{"bot":["chat:write","im:write","im:read","im:history","mpim:read","mpim:history","users:read","channels:read","channels:history","channels:join","groups:read","groups:history","app_mentions:read"]}},"settings":{"event_subscriptions":{"bot_events":["message.im"]},"socket_mode_enabled":true}}',
+      'COPYABLE:{"display_information":{"name":"Seneca"},"features":{"app_home":{"home_tab_enabled":true,"messages_tab_enabled":true,"messages_tab_read_only_enabled":false},"bot_user":{"display_name":"Seneca","always_online":true}},"oauth_config":{"scopes":{"bot":["chat:write","im:write","im:read","im:history","mpim:read","mpim:history","users:read","channels:read","channels:history","channels:join","groups:read","groups:history","app_mentions:read"]}},"settings":{"event_subscriptions":{"bot_events":["message.im"]},"socket_mode_enabled":true}}',
       '3. Click "Next" → review the summary → click "Create". Then go to "Install App" in the left sidebar → click "Install to Workspace" → click "Allow"',
       '4. In the left sidebar, click "OAuth & Permissions". Copy the "Bot User OAuth Token" (starts with xoxb-...)',
       '5. In the left sidebar, click "Basic Information" → scroll to "App-Level Tokens" → click "Generate Token and Scopes" → name it "socket" → click "Add Scope" → select "connections:write" → click "Generate" → copy the token (starts with xapp-...)',
-      '6. (Optional) Still in "Basic Information", scroll to "Display Information" → upload the OpenJarvis icon as the app icon',
+      '6. (Optional) Still in "Basic Information", scroll to "Display Information" → upload an app icon',
       '7. Paste both tokens below and click Connect',
     ],
     fields: [
@@ -2386,7 +2381,7 @@ const MESSAGING_CHANNELS: MessagingChannelConfig[] = [
       { key: 'app_token', label: 'App Token', placeholder: 'xapp-...', type: 'password', required: true },
     ],
     activeLabel: () => 'Connected to Slack',
-    howToUse: () => 'Open Slack and DM @OpenJarvis to talk to your agent.',
+    howToUse: () => 'Open Slack and DM @Seneca to talk to your agent.',
   },
 ];
 
@@ -2420,17 +2415,17 @@ function SendBlueWebhookStep({
         background: 'color-mix(in srgb, var(--color-success) 10%, var(--color-bg))', border: '1px solid color-mix(in srgb, var(--color-success) 22%, transparent)',
         borderRadius: 6, padding: 12, marginBottom: 12, textAlign: 'center',
       }}>
-        <div style={{ fontSize: 11, color: 'var(--color-success)', fontWeight: 600, marginBottom: 4 }}>
+        <div style={{ fontSize: 11, color: 'var(--color-success)', fontWeight: 500, marginBottom: 4 }}>
           {'\u2713'} Your agent is now reachable via iMessage / SMS
         </div>
-        <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--color-success)' }}>{selectedNumber}</div>
+        <div style={{ fontSize: 18, fontWeight: 550, color: 'var(--color-success)' }}>{selectedNumber}</div>
       </div>
 
       {/* Webhook / ngrok step */}
       <div style={{ marginTop: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-          <span style={{ background: 'var(--color-accent-purple)', color: 'var(--color-on-accent)', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>4</span>
-          <span style={{ fontSize: 12, fontWeight: 600 }}>Set up webhook to receive texts</span>
+          <span style={{ background: 'var(--color-accent-purple)', color: 'var(--color-on-accent)', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 550, flexShrink: 0 }}>4</span>
+          <span style={{ fontSize: 12, fontWeight: 500 }}>Set up webhook to receive texts</span>
         </div>
         <div style={{
           fontSize: 11, lineHeight: 1.6,
@@ -2462,7 +2457,7 @@ function SendBlueWebhookStep({
               fontSize: 11, padding: '7px 14px', whiteSpace: 'nowrap' as const,
               background: webhookStatus === 'done' ? 'var(--color-success)' : 'var(--color-accent-purple)',
               color: 'var(--color-on-accent)', border: 'none', borderRadius: 5,
-              cursor: 'pointer', fontWeight: 600,
+              cursor: 'pointer', fontWeight: 500,
               opacity: !webhookUrl.trim() || webhookStatus === 'registering' ? 0.5 : 1,
             }}
           >
@@ -2548,7 +2543,7 @@ function SendBlueWizard({
 
   const btnPrimary: React.CSSProperties = {
     fontSize: 12, padding: '7px 18px', background: 'var(--color-accent-purple)', color: 'var(--color-on-accent)',
-    border: 'none', borderRadius: 5, cursor: 'pointer', fontWeight: 600,
+    border: 'none', borderRadius: 5, cursor: 'pointer', fontWeight: 500,
   };
 
   const btnSecondary: React.CSSProperties = {
@@ -2637,7 +2632,7 @@ function SendBlueWizard({
         <div style={{ display: 'flex', alignItems: 'center', padding: '12px 14px' }}>
           <span style={{ fontSize: 18, marginRight: 10 }}>{'\uD83D\uDCAC'}</span>
           <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 600, fontSize: 13 }}>iMessage / SMS</div>
+            <div style={{ fontWeight: 500, fontSize: 13 }}>iMessage / SMS</div>
             <div style={{ fontSize: 11, color: healthy ? 'var(--color-success)' : 'var(--color-warning)' }}>
               {healthy ? `Active on ${activeNumber}` : `Disconnected — ${activeNumber}`}
             </div>
@@ -2655,7 +2650,7 @@ function SendBlueWizard({
             <span style={{
               background: healthy ? 'color-mix(in srgb, var(--color-success) 22%, transparent)' : 'color-mix(in srgb, var(--color-warning) 18%, var(--color-bg))',
               color: healthy ? 'var(--color-success)' : 'var(--color-warning)',
-              padding: '2px 8px', borderRadius: 10, fontSize: 10, fontWeight: 600,
+              padding: '2px 8px', borderRadius: 10, fontSize: 10, fontWeight: 500,
             }}>{healthy ? 'Active' : 'Disconnected'}</span>
             <button onClick={() => setExpanded(true)} style={btnSecondary}>
               Details
@@ -2673,7 +2668,7 @@ function SendBlueWizard({
         <div style={{ display: 'flex', alignItems: 'center', padding: '12px 14px' }}>
           <span style={{ fontSize: 18, marginRight: 10 }}>{'\uD83D\uDCAC'}</span>
           <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 600, fontSize: 13 }}>iMessage / SMS</div>
+            <div style={{ fontWeight: 500, fontSize: 13 }}>iMessage / SMS</div>
             <div style={{ fontSize: 11, color: 'var(--color-success)' }}>Active on {activeNumber}</div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -2687,7 +2682,7 @@ function SendBlueWizard({
             Responses arrive as iMessage (blue bubbles) when possible, SMS otherwise.
           </div>
 
-          <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginBottom: 8, fontWeight: 600 }}>
+          <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginBottom: 8, fontWeight: 500 }}>
             Send a test message
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -2721,14 +2716,14 @@ function SendBlueWizard({
       >
         <span style={{ fontSize: 18, marginRight: 10 }}>{'\uD83D\uDCAC'}</span>
         <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 600, fontSize: 13 }}>iMessage / SMS</div>
+          <div style={{ fontWeight: 500, fontSize: 13 }}>iMessage / SMS</div>
           <div style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
             Your agent gets its own phone number — text it via iMessage or SMS
           </div>
         </div>
         <button
           onClick={(e) => { e.stopPropagation(); setStep(step === 'idle' ? 'creds' : 'idle'); }}
-          style={{ fontSize: 10, padding: '3px 12px', background: 'var(--color-accent-purple)', color: 'var(--color-on-accent)', border: 'none', borderRadius: 5, cursor: 'pointer', fontWeight: 600 }}
+          style={{ fontSize: 10, padding: '3px 12px', background: 'var(--color-accent-purple)', color: 'var(--color-on-accent)', border: 'none', borderRadius: 5, cursor: 'pointer', fontWeight: 500 }}
         >
           {step === 'idle' ? 'Set Up' : 'Cancel'}
         </button>
@@ -2738,8 +2733,8 @@ function SendBlueWizard({
       {(step === 'creds' || step === 'verifying') && (
         <div style={{ borderTop: '1px solid var(--color-border)', padding: 14, background: 'var(--color-bg)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-            <span style={{ background: 'var(--color-accent-purple)', color: 'var(--color-on-accent)', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>1</span>
-            <span style={{ fontSize: 12, fontWeight: 600 }}>Create a SendBlue account</span>
+            <span style={{ background: 'var(--color-accent-purple)', color: 'var(--color-on-accent)', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 550, flexShrink: 0 }}>1</span>
+            <span style={{ fontSize: 12, fontWeight: 500 }}>Create a SendBlue account</span>
           </div>
           <button
             onClick={() => window.open('https://dashboard.sendblue.com/company-signup', '_blank')}
@@ -2749,8 +2744,8 @@ function SendBlueWizard({
           </button>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-            <span style={{ background: 'var(--color-accent-purple)', color: 'var(--color-on-accent)', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>2</span>
-            <span style={{ fontSize: 12, fontWeight: 600 }}>Paste your API credentials</span>
+            <span style={{ background: 'var(--color-accent-purple)', color: 'var(--color-on-accent)', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 550, flexShrink: 0 }}>2</span>
+            <span style={{ fontSize: 12, fontWeight: 500 }}>Paste your API credentials</span>
           </div>
           <div style={{ fontSize: 11, color: 'var(--color-text-secondary)', marginBottom: 8 }}>
             Go to your{' '}
@@ -2789,13 +2784,13 @@ function SendBlueWizard({
       {(step === 'verified' || step === 'connecting') && (
         <div style={{ borderTop: '1px solid var(--color-border)', padding: 14, background: 'var(--color-bg)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-            <span style={{ background: 'var(--color-success)', color: 'var(--color-on-accent)', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{'\u2713'}</span>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-success)' }}>Credentials verified</span>
+            <span style={{ background: 'var(--color-success)', color: 'var(--color-on-accent)', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 550, flexShrink: 0 }}>{'\u2713'}</span>
+            <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--color-success)' }}>Credentials verified</span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-            <span style={{ background: 'var(--color-accent-purple)', color: 'var(--color-on-accent)', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>3</span>
-            <span style={{ fontSize: 12, fontWeight: 600 }}>Your agent's phone number</span>
+            <span style={{ background: 'var(--color-accent-purple)', color: 'var(--color-on-accent)', borderRadius: '50%', width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 550, flexShrink: 0 }}>3</span>
+            <span style={{ fontSize: 12, fontWeight: 500 }}>Your agent's phone number</span>
           </div>
 
           {numbers.length > 1 ? (
@@ -2819,7 +2814,7 @@ function SendBlueWizard({
             }}>
               <span style={{ fontSize: 20 }}>{'\uD83D\uDCF1'}</span>
               <div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--color-success)' }}>{selectedNumber}</div>
+                <div style={{ fontSize: 14, fontWeight: 550, color: 'var(--color-success)' }}>{selectedNumber}</div>
                 <div style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>This will be your agent's phone number</div>
               </div>
             </div>
@@ -2942,8 +2937,7 @@ function MessagingTab({ agentId }: { agentId: string }) {
       {/* Divider */}
       <div style={{
         fontSize: 10, color: 'var(--color-text-secondary)',
-        textTransform: 'uppercase', letterSpacing: 1,
-        margin: '14px 0 8px', fontWeight: 600,
+        margin: '14px 0 8px', fontWeight: 500,
       }}>
         Other messaging channels
       </div>
@@ -2977,7 +2971,7 @@ function MessagingTab({ agentId }: { agentId: string }) {
             }}>
               <span style={{ fontSize: 18, marginRight: 10 }}>{ch.icon}</span>
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600, fontSize: 13 }}>{ch.name}</div>
+                <div style={{ fontWeight: 500, fontSize: 13 }}>{ch.name}</div>
                 <div style={{
                   fontSize: 11,
                   color: binding ? 'var(--color-success)' : 'var(--color-text-secondary)',
@@ -2990,7 +2984,7 @@ function MessagingTab({ agentId }: { agentId: string }) {
                   <span style={{
                     background: 'color-mix(in srgb, var(--color-success) 22%, transparent)', color: 'var(--color-success)',
                     padding: '2px 8px', borderRadius: 10,
-                    fontSize: 10, fontWeight: 600,
+                    fontSize: 10, fontWeight: 500,
                   }}>Active</span>
                   <button
                     onClick={() => handleRemove(binding.id)}
@@ -3013,7 +3007,7 @@ function MessagingTab({ agentId }: { agentId: string }) {
                     fontSize: 10, padding: '3px 12px',
                     background: 'var(--color-accent-purple)', color: 'var(--color-on-accent)',
                     border: 'none', borderRadius: 5,
-                    cursor: 'pointer', fontWeight: 600,
+                    cursor: 'pointer', fontWeight: 500,
                   }}
                 >
                   {isSetup ? 'Cancel' : 'Set Up'}
@@ -3077,7 +3071,7 @@ function MessagingTab({ agentId }: { agentId: string }) {
                                 fontSize: 10, padding: '2px 8px',
                                 background: 'var(--color-accent-purple)', color: 'var(--color-on-accent)',
                                 border: 'none', borderRadius: 3,
-                                cursor: 'pointer', fontWeight: 600,
+                                cursor: 'pointer', fontWeight: 500,
                               }}
                             >Copy</button>
                           </div>
@@ -3120,7 +3114,7 @@ function MessagingTab({ agentId }: { agentId: string }) {
                     fontSize: 12, padding: '7px 20px',
                     background: 'var(--color-accent-purple)', color: 'var(--color-on-accent)',
                     border: 'none', borderRadius: 5,
-                    cursor: 'pointer', fontWeight: 600,
+                    cursor: 'pointer', fontWeight: 500,
                     opacity: loading || !canConnect ? 0.5 : 1,
                     marginTop: 4,
                   }}
@@ -3564,8 +3558,8 @@ export function AgentsPage() {
     const DETAIL_TABS = [
       { id: 'interact', label: 'Interact', icon: MessageSquare },
       { id: 'overview', label: 'Overview', icon: Activity },
-      { id: 'channels', label: 'Data Sources', icon: Database },
-      { id: 'messaging', label: 'Messaging Channels', icon: Wifi },
+      { id: 'channels', label: 'Data sources', icon: Database },
+      { id: 'messaging', label: 'Messaging channels', icon: Wifi },
       { id: 'tasks', label: 'Tasks', icon: ListTodo },
       { id: 'memory', label: 'Memory', icon: Brain },
       { id: 'learning', label: 'Learning', icon: Settings },
@@ -3573,8 +3567,8 @@ export function AgentsPage() {
     ] as const;
 
     return (
-      <div className="flex-1 overflow-y-auto px-6 py-10">
-        <div className="max-w-5xl mx-auto">
+      <div className="flex-1 overflow-y-auto px-6 md:px-14 pt-12 pb-16">
+        <div className="max-w-[1180px] mx-auto">
         {/* Back button */}
         <button
           onClick={() => setSelectedAgentId(null)}
@@ -3587,9 +3581,9 @@ export function AgentsPage() {
         {/* Header */}
         <div className="flex items-start justify-between mb-6">
           <div className="flex items-center gap-3">
-            <Bot size={24} style={{ color: 'var(--color-accent)' }} />
+            <Bot size={24} strokeWidth={1.25} style={{ color: 'var(--color-text-tertiary)' }} />
             <div>
-              <h1 className="text-xl font-semibold" style={{ color: 'var(--color-text)' }}>
+              <h1 className="text-[28px] font-light tracking-[-0.02em]" style={{ color: 'var(--color-text)' }}>
                 {selectedAgent.name}
               </h1>
               <div className="flex items-center gap-2 mt-1">
@@ -3607,7 +3601,7 @@ export function AgentsPage() {
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs"
                 style={{ background: 'var(--color-success)20', color: 'var(--color-success)', border: '1px solid var(--color-success)40' }}
               >
-                <MessageSquare size={13} /> Chat ready — just type below
+                <MessageSquare size={13} /> Chat ready, just type below
               </span>
             ) : (
               <button
@@ -3615,7 +3609,7 @@ export function AgentsPage() {
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm cursor-pointer font-medium"
                 style={{ background: 'var(--color-accent)', color: 'var(--color-on-accent)' }}
               >
-                <Zap size={13} /> Run Now
+                <Zap size={13} /> Run now
               </button>
             )}
             {(selectedAgent.status === 'running' || selectedAgent.status === 'idle') && (
@@ -3663,19 +3657,22 @@ export function AgentsPage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 mb-6 p-1 rounded-lg overflow-x-auto" style={{ background: 'var(--color-bg-secondary)' }}>
+        <div
+          role="tablist"
+          className="flex gap-1 mb-8 p-1 rounded-full overflow-x-auto w-fit max-w-full"
+          style={{ border: '1px solid var(--color-border)', background: 'rgba(255,255,255,0.015)' }}
+        >
           {DETAIL_TABS.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
+              role="tab"
+              aria-selected={detailTab === id}
+              data-active={detailTab === id}
               onClick={() => setDetailTab(id)}
-              className="px-3 py-2 rounded-md text-xs flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors"
-              style={{
-                background: detailTab === id ? 'var(--color-bg)' : 'transparent',
-                color: detailTab === id ? 'var(--color-text)' : 'var(--color-text-secondary)',
-                fontWeight: detailTab === id ? 500 : 400,
-              }}
+              className="sn-tab"
+              style={{ height: 30, padding: '0 14px' }}
             >
-              <Icon size={13} />
+              <Icon size={13} strokeWidth={1.5} />
               {label}
             </button>
           ))}
@@ -3712,7 +3709,7 @@ export function AgentsPage() {
                   border: '1px solid var(--color-border)',
                 }}
               >
-                <Database size={16} style={{ color: 'var(--color-accent)', flexShrink: 0, marginTop: 2 }} />
+                <Database size={16} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0, marginTop: 2 }} />
                 <div style={{ color: 'var(--color-text-secondary)' }}>
                   <strong>Tip:</strong> Connect your personal data in the{' '}
                   <button
@@ -3748,25 +3745,25 @@ export function AgentsPage() {
               const energyKj = energyWh * 3.6;
               const fmtFlops = flops >= 1e15 ? `${(flops / 1e15).toFixed(1)} PFLOPs` : `${(flops / 1e12).toFixed(1)} TFLOPs`;
               const hasSavings = inTok + outTok > 0;
-              const sectionTitle = { fontSize: 11, fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: 'uppercase' as const, letterSpacing: '0.05em', marginBottom: 8 };
+              const sectionTitle = { fontSize: 12, fontWeight: 400, color: 'var(--color-text-tertiary)', marginBottom: 12 };
               return (
-                <div className="p-4 rounded-xl" style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}>
-                  <div className="flex gap-0 flex-wrap items-stretch">
+                <div className="sn-card p-6">
+                  <div className="flex gap-y-6 flex-wrap items-stretch">
                     {/* Agent Statistics */}
                     <div className="pr-5">
-                      <p style={sectionTitle}>Agent Statistics</p>
+                      <p style={sectionTitle}>Agent statistics</p>
                       <div className="flex gap-5">
                         <div>
-                          <p className="text-xl font-bold leading-none" style={{ color: 'var(--color-text)' }}>{selectedAgent.total_runs ?? 0}</p>
-                          <p className="text-xs mt-1" style={{ color: 'var(--color-text-tertiary)' }}>Total Queries</p>
+                          <p className="sn-figure text-[30px]">{selectedAgent.total_runs ?? 0}</p>
+                          <p className="text-xs mt-1" style={{ color: 'var(--color-text-tertiary)' }}>Total queries</p>
                         </div>
                         <div>
-                          <p className="text-xl font-bold leading-none" style={{ color: 'var(--color-text)' }}>{inTok.toLocaleString()}</p>
-                          <p className="text-xs mt-1" style={{ color: 'var(--color-text-tertiary)' }}>Input Tokens</p>
+                          <p className="sn-figure text-[30px]">{inTok.toLocaleString()}</p>
+                          <p className="text-xs mt-1" style={{ color: 'var(--color-text-tertiary)' }}>Input tokens</p>
                         </div>
                         <div>
-                          <p className="text-xl font-bold leading-none" style={{ color: 'var(--color-text)' }}>{outTok.toLocaleString()}</p>
-                          <p className="text-xs mt-1" style={{ color: 'var(--color-text-tertiary)' }}>Output Tokens</p>
+                          <p className="sn-figure text-[30px]">{outTok.toLocaleString()}</p>
+                          <p className="text-xs mt-1" style={{ color: 'var(--color-text-tertiary)' }}>Output tokens</p>
                         </div>
                       </div>
                     </div>
@@ -3774,14 +3771,14 @@ export function AgentsPage() {
                       <div style={{ width: 1, background: 'var(--color-border)' }} />
                       {/* Local Utilization */}
                       <div className="px-5">
-                        <p style={sectionTitle}>Local Utilization</p>
+                        <p style={sectionTitle}>Local utilization</p>
                         <div className="flex gap-5">
                           <div>
-                            <p className="text-xl font-bold leading-none" style={{ color: 'var(--color-success)' }}>{fmtFlops}</p>
+                            <p className="sn-figure text-[30px]">{fmtFlops}</p>
                             <p className="text-xs mt-1" style={{ color: 'var(--color-text-tertiary)' }}>Compute</p>
                           </div>
                           <div>
-                            <p className="text-xl font-bold leading-none" style={{ color: 'var(--color-success)' }}>{energyKj.toFixed(2)} kJ</p>
+                            <p className="sn-figure text-[30px]">{energyKj.toFixed(2)} kJ</p>
                             <p className="text-xs mt-1" style={{ color: 'var(--color-text-tertiary)' }}>Energy</p>
                           </div>
                         </div>
@@ -3789,13 +3786,13 @@ export function AgentsPage() {
                       <div style={{ width: 1, background: 'var(--color-border)' }} />
                       {/* Dollars Saved */}
                       <div className="pl-5">
-                        <p style={sectionTitle}>Dollars Saved vs.</p>
+                        <p style={sectionTitle}>Dollars saved against</p>
                         <div className="flex gap-5">
                           {providers.map((p) => {
                             const cost = (inTok / 1e6) * p.inPer1M + (outTok / 1e6) * p.outPer1M;
                             return (
                               <div key={p.label}>
-                                <p className="text-xl font-bold leading-none" style={{ color: 'var(--color-success)' }}>${cost.toFixed(4)}</p>
+                                <p className="sn-figure text-[30px]">${cost.toFixed(4)}</p>
                                 <p className="text-xs mt-1" style={{ color: 'var(--color-text-tertiary)' }}>{p.label}</p>
                               </div>
                             );
@@ -3814,7 +3811,7 @@ export function AgentsPage() {
                 style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}
               >
                 <h3 className="text-sm font-medium mb-2" style={{ color: 'var(--color-text-secondary)' }}>
-                  Messaging Channels
+                  Messaging channels
                 </h3>
                 {channels.map((b) => (
                   <div key={b.id} className="text-sm py-1" style={{ color: 'var(--color-text)' }}>
@@ -3904,8 +3901,8 @@ export function AgentsPage() {
   // ── List View ───────────────────────────────────────────────────────────
 
   return (
-    <div className="flex-1 overflow-y-auto px-6 py-10">
-      <div className="max-w-5xl mx-auto">
+    <div className="flex-1 overflow-y-auto px-6 md:px-14 pt-12 pb-16">
+      <div className="max-w-[1180px] mx-auto">
       {/* Launch wizard modal */}
       {showWizard && (
         <LaunchWizard
@@ -3918,26 +3915,24 @@ export function AgentsPage() {
         />
       )}
 
-      <header className="mb-6">
-        <div className="flex justify-between items-center">
-          <h1 className="text-lg font-semibold" style={{ color: 'var(--color-text)' }}>
-            Agents
+      <header className="mb-10">
+        <div className="flex justify-between items-end gap-6">
+          <h1 className="sn-lede text-[30px] md:text-[36px] max-w-[860px]">
+            <b>Agents.</b> Long-running agents that watch your sources, run on a schedule and message you through connected channels.
           </h1>
           <button
             onClick={() => agentManagerAvailable && setShowWizard(true)}
             disabled={agentManagerAvailable === false}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="shrink-0 flex items-center gap-2 h-10 px-4 rounded-[10px] text-[13px] cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             style={{
-              background: agentManagerAvailable === false ? 'var(--color-bg-tertiary)' : 'var(--color-accent)',
-              color: agentManagerAvailable === false ? 'var(--color-text-tertiary)' : 'var(--color-on-accent)',
+              background: 'var(--color-bg-tertiary)',
+              border: '1px solid var(--color-input-border)',
+              color: agentManagerAvailable === false ? 'var(--color-text-tertiary)' : 'var(--color-text)',
             }}
           >
-            <Plus size={15} /> New Agent
+            <Plus size={15} strokeWidth={1.5} /> New agent
           </button>
         </div>
-        <p className="text-sm mt-2 max-w-2xl" style={{ color: 'var(--color-text-secondary)' }}>
-          Long-running autonomous agents that can monitor sources, run tasks on a schedule, and message you through connected channels.
-        </p>
       </header>
 
       {agentManagerAvailable === false && (

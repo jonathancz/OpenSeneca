@@ -9,22 +9,10 @@ import { initApiBase } from './lib/api';
 import { initAnalytics } from './lib/analytics';
 import './index.css';
 
-function applyTheme() {
-  try {
-    const raw = localStorage.getItem('openjarvis-settings');
-    const settings = raw ? JSON.parse(raw) : {};
-    const theme = settings.theme || 'system';
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-      document.documentElement.classList.remove('light');
-    } else if (theme === 'light') {
-      document.documentElement.classList.add('light');
-      document.documentElement.classList.remove('dark');
-    }
-  } catch { /* use system default */ }
-}
-
-applyTheme();
+// Seneca is dark only. index.html already sets the class; keep it in case a
+// host page or an old service worker served markup without it.
+document.documentElement.classList.add('dark');
+document.documentElement.classList.remove('light');
 
 // Fetch the API base URL from the Tauri backend before rendering.
 // This ensures JARVIS_PORT is defined in one place (the Rust backend).

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { motion } from 'motion/react';
+import { PillTabs } from '../components/ui/seneca';
 import { useAppStore } from '../lib/store';
 import {
   fetchManagedAgents,
@@ -282,7 +283,7 @@ function GenericConnectPanel({
           border: '1px solid var(--color-border)',
           borderRadius: 6, padding: 10, marginBottom: 10,
         }}>
-          <div style={{ color: 'var(--color-accent-purple)', fontSize: 10, fontWeight: 600, marginBottom: 3 }}>
+          <div style={{ color: 'var(--color-accent-purple)', fontSize: 10, fontWeight: 500, marginBottom: 3 }}>
             SETUP REQUIRED
           </div>
           <div style={{ fontSize: 12, marginBottom: 6 }}>{oauthSetup.setup_hint}</div>
@@ -386,7 +387,7 @@ function UploadForm({ onDone }: { onDone?: () => void }) {
 
   const tabStyle = (active: boolean): React.CSSProperties => ({
     flex: 1, padding: '6px 0', textAlign: 'center',
-    fontSize: 12, fontWeight: 600, cursor: 'pointer',
+    fontSize: 12, fontWeight: 500, cursor: 'pointer',
     background: active ? 'var(--color-accent-purple)' : 'transparent',
     color: active ? 'white' : 'var(--color-text-secondary)',
     border: 'none', borderRadius: 4,
@@ -707,7 +708,7 @@ export function SyncStatusDisplay({
             fontSize: 10, padding: '2px 10px',
             background: 'var(--color-accent-purple)', color: 'var(--color-on-accent)',
             border: 'none', borderRadius: 3,
-            cursor: syncing || disabled ? 'default' : 'pointer', fontWeight: 600,
+            cursor: syncing || disabled ? 'default' : 'pointer', fontWeight: 500,
             opacity: syncing || disabled ? 0.5 : 1,
           }}
         >{syncing ? 'Retrying...' : 'Retry Sync'}</button>
@@ -815,14 +816,14 @@ export function SyncStatusDisplay({
             fontSize: 10, padding: '2px 10px',
             background: 'var(--color-accent-purple)', color: 'var(--color-on-accent)',
             border: 'none', borderRadius: 3,
-            cursor: syncing || disabled ? 'default' : 'pointer', fontWeight: 600,
+            cursor: syncing || disabled ? 'default' : 'pointer', fontWeight: 500,
             opacity: syncing || disabled ? 0.5 : 1,
           }}
         >{syncing ? 'Syncing...' : hasSynced ? 'Re-sync' : 'Sync Now'}</button>
       </div>
       {hasSynced && connectorId === 'slack' && (
         <div style={{ fontSize: 10, color: 'var(--color-text-tertiary)', marginTop: 4 }}>
-          Tip: invite the bot to channels with /invite @OpenJarvis, then re-sync
+          Tip: invite the bot to channels with /invite @Seneca, then re-sync
         </div>
       )}
       {syncError && (
@@ -1100,7 +1101,7 @@ function DataSourcesSection() {
                   display: 'flex', alignItems: 'center', gap: 14,
                 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="font-semibold" style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text)' }}>
+                    <div className="font-semibold" style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text)' }}>
                       {meta?.display_name ?? c.display_name}
                     </div>
                     <SyncStatusDisplay
@@ -1128,7 +1129,6 @@ function DataSourcesSection() {
                       border: '1px solid var(--color-border)',
                       borderRadius: 4,
                       cursor: connectorActionsBusy ? 'default' : 'pointer',
-                      letterSpacing: '0.15em',
                       opacity: connectorActionsBusy ? 0.5 : 1,
                     }}
                   >
@@ -1175,7 +1175,7 @@ function DataSourcesSection() {
                   onClick={() => setExpandedId(isExpanded ? null : c.connector_id)}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="font-semibold" style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-text)' }}>
+                    <div className="font-semibold" style={{ fontSize: 14, fontWeight: 500, color: 'var(--color-text)' }}>
                       {meta?.display_name ?? c.display_name}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--color-text-tertiary)', marginTop: 2 }}>
@@ -1208,7 +1208,7 @@ function DataSourcesSection() {
                           marginBottom: 8,
                         }}
                       >
-                        <div style={{ color: 'var(--color-accent-purple)', fontSize: 10, fontWeight: 600, marginBottom: 3 }}>
+                        <div style={{ color: 'var(--color-accent-purple)', fontSize: 10, fontWeight: 500, marginBottom: 3 }}>
                           STEP {i + 1}
                         </div>
                         <div style={{ fontSize: 12, marginBottom: step.url ? 4 : 0 }}>{step.label}</div>
@@ -1354,11 +1354,11 @@ const MESSAGING_CHANNELS: MessagingChannelConfig[] = [
     setupSteps: [
       '1. Go to api.slack.com/apps \u2192 click "Create New App" \u2192 choose "From an app manifest"',
       '2. Select your workspace. When asked for the manifest format, choose JSON. Then paste the manifest below (click "Copy" to copy it):',
-      'COPYABLE:{"display_information":{"name":"OpenJarvis"},"features":{"app_home":{"home_tab_enabled":true,"messages_tab_enabled":true,"messages_tab_read_only_enabled":false},"bot_user":{"display_name":"OpenJarvis","always_online":true}},"oauth_config":{"scopes":{"bot":["chat:write","im:write","im:read","im:history","mpim:read","mpim:history","users:read","channels:read","channels:history","channels:join","groups:read","groups:history","app_mentions:read"]}},"settings":{"event_subscriptions":{"bot_events":["message.im"]},"socket_mode_enabled":true}}',
+      'COPYABLE:{"display_information":{"name":"Seneca"},"features":{"app_home":{"home_tab_enabled":true,"messages_tab_enabled":true,"messages_tab_read_only_enabled":false},"bot_user":{"display_name":"Seneca","always_online":true}},"oauth_config":{"scopes":{"bot":["chat:write","im:write","im:read","im:history","mpim:read","mpim:history","users:read","channels:read","channels:history","channels:join","groups:read","groups:history","app_mentions:read"]}},"settings":{"event_subscriptions":{"bot_events":["message.im"]},"socket_mode_enabled":true}}',
       '3. Click "Next" \u2192 review the summary \u2192 click "Create". Then go to "Install App" in the left sidebar \u2192 click "Install to Workspace" \u2192 click "Allow"',
       '4. In the left sidebar, click "OAuth & Permissions". Copy the "Bot User OAuth Token" (starts with xoxb-...)',
       '5. In the left sidebar, click "Basic Information" \u2192 scroll to "App-Level Tokens" \u2192 click "Generate Token and Scopes" \u2192 name it "socket" \u2192 click "Add Scope" \u2192 select "connections:write" \u2192 click "Generate" \u2192 copy the token (starts with xapp-...)',
-      '6. (Optional) Still in "Basic Information", scroll to "Display Information" \u2192 upload the OpenJarvis icon as the app icon',
+      '6. (Optional) Still in "Basic Information", scroll to "Display Information" \u2192 upload an app icon',
       '7. Paste both tokens below and click Connect',
     ],
     fields: [
@@ -1366,7 +1366,7 @@ const MESSAGING_CHANNELS: MessagingChannelConfig[] = [
       { key: 'app_token', label: 'App Token', placeholder: 'xapp-...', type: 'password', required: true },
     ],
     activeLabel: () => 'Connected to Slack',
-    howToUse: () => 'Open Slack and DM @OpenJarvis to talk to your agent.',
+    howToUse: () => 'Open Slack and DM @Seneca to talk to your agent.',
   },
 ];
 
@@ -1422,7 +1422,7 @@ function SendBlueSection({
         <div style={{ display: 'flex', alignItems: 'center', padding: '12px 14px' }}>
           <span style={{ fontSize: 18, marginRight: 10 }}>{'\uD83D\uDCF1'}</span>
           <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 600, fontSize: 13 }}>iMessage + SMS</div>
+            <div style={{ fontWeight: 500, fontSize: 13 }}>iMessage + SMS</div>
             <div style={{ fontSize: 11, color: 'var(--color-success)' }}>
               Active &mdash; text {(cfg.phone_number as string) || 'your number'} to chat
             </div>
@@ -1545,7 +1545,7 @@ function SendBlueSection({
                 fontSize: 11, padding: '6px 12px', whiteSpace: 'nowrap',
                 background: webhookStatus === 'done' ? 'var(--color-success)' : 'var(--color-accent-purple)',
                 color: 'var(--color-on-accent)', border: 'none', borderRadius: 4,
-                cursor: 'pointer', fontWeight: 600,
+                cursor: 'pointer', fontWeight: 500,
                 opacity: !webhookUrl.trim() || webhookStatus === 'registering' ? 0.5 : 1,
               }}
             >
@@ -1621,7 +1621,7 @@ function SendBlueSection({
       >
         <span style={{ fontSize: 18, marginRight: 10 }}>{'\uD83D\uDCF1'}</span>
         <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 600, fontSize: 13 }}>iMessage + SMS (SendBlue)</div>
+          <div style={{ fontWeight: 500, fontSize: 13 }}>iMessage + SMS (SendBlue)</div>
           <div style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>
             Let people text your agent from any phone
           </div>
@@ -1646,7 +1646,7 @@ function SendBlueSection({
             ))}
           </div>
 
-          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 8 }}>
             {steps[step]?.title}
           </div>
           {steps[step]?.content}
@@ -1676,7 +1676,7 @@ function SendBlueSection({
                   fontSize: 12, padding: '6px 16px',
                   background: 'var(--color-accent-purple)', color: 'var(--color-on-accent)',
                   border: 'none', borderRadius: 5,
-                  cursor: 'pointer', fontWeight: 600,
+                  cursor: 'pointer', fontWeight: 500,
                   opacity: steps[step]?.canAdvance ? 1 : 0.5,
                 }}
               >Next</button>
@@ -1688,7 +1688,7 @@ function SendBlueSection({
                   fontSize: 12, padding: '6px 16px',
                   background: 'var(--color-accent-purple)', color: 'var(--color-on-accent)',
                   border: 'none', borderRadius: 5,
-                  cursor: 'pointer', fontWeight: 600,
+                  cursor: 'pointer', fontWeight: 500,
                   opacity: loading || !steps[step]?.canAdvance ? 0.5 : 1,
                 }}
               >{loading ? 'Connecting...' : 'Connect'}</button>
@@ -1776,7 +1776,7 @@ function MessagingSection({ agentId }: { agentId: string }) {
             <div style={{ display: 'flex', alignItems: 'center', padding: '12px 14px' }}>
               <span style={{ fontSize: 18, marginRight: 10 }}>{ch.icon}</span>
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600, fontSize: 13 }}>{ch.name}</div>
+                <div style={{ fontWeight: 500, fontSize: 13 }}>{ch.name}</div>
                 <div style={{
                   fontSize: 11,
                   color: binding ? 'var(--color-success)' : 'var(--color-text-secondary)',
@@ -1789,7 +1789,7 @@ function MessagingSection({ agentId }: { agentId: string }) {
                   <span style={{
                     background: 'color-mix(in srgb, var(--color-success) 22%, transparent)', color: 'var(--color-success)',
                     padding: '2px 8px', borderRadius: 10,
-                    fontSize: 10, fontWeight: 600,
+                    fontSize: 10, fontWeight: 500,
                   }}>Active</span>
                   <button
                     onClick={() => handleRemove(binding.id)}
@@ -1807,7 +1807,7 @@ function MessagingSection({ agentId }: { agentId: string }) {
                   style={{
                     fontSize: 10, padding: '3px 12px', background: 'var(--color-accent-purple)',
                     color: 'var(--color-on-accent)', border: 'none', borderRadius: 5,
-                    cursor: 'pointer', fontWeight: 600,
+                    cursor: 'pointer', fontWeight: 500,
                   }}
                 >{isSetup ? 'Cancel' : 'Set Up'}</button>
               )}
@@ -1860,7 +1860,7 @@ function MessagingSection({ agentId }: { agentId: string }) {
                                 fontSize: 10, padding: '2px 8px',
                                 background: 'var(--color-accent-purple)', color: 'var(--color-on-accent)',
                                 border: 'none', borderRadius: 3,
-                                cursor: 'pointer', fontWeight: 600,
+                                cursor: 'pointer', fontWeight: 500,
                               }}
                             >Copy</button>
                           </div>
@@ -1896,7 +1896,7 @@ function MessagingSection({ agentId }: { agentId: string }) {
                   style={{
                     fontSize: 12, padding: '7px 20px', background: 'var(--color-accent-purple)',
                     color: 'var(--color-on-accent)', border: 'none', borderRadius: 5,
-                    cursor: 'pointer', fontWeight: 600,
+                    cursor: 'pointer', fontWeight: 500,
                     opacity: loading || !canConnect ? 0.5 : 1, marginTop: 4,
                   }}
                 >{loading ? 'Connecting...' : 'Connect'}</button>
@@ -2079,7 +2079,7 @@ function MemorySection() {
               <div className="text-lg font-bold tabular-nums" style={{ color: 'var(--color-text)' }}>
                 {stats.entries.toLocaleString()}
               </div>
-              <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--color-text-tertiary)' }}>
+              <div className="text-[10px]" style={{ color: 'var(--color-text-tertiary)' }}>
                 indexed
               </div>
             </div>
@@ -2332,51 +2332,40 @@ export function DataSourcesPage() {
   }, [activeTab, firstAgent, creatingAgent, ensureAgent]);
 
   const tabs = [
-    { id: 'sources' as const, label: 'Data Sources', icon: Database },
-    { id: 'messaging' as const, label: 'Messaging Channels', icon: MessageSquare },
-    { id: 'memory' as const, label: 'Memory', icon: Brain },
+    { id: 'sources' as const, label: 'Data sources' },
+    { id: 'messaging' as const, label: 'Messaging channels' },
+    { id: 'memory' as const, label: 'Memory' },
   ];
 
+  // [ and ] step through the tabs (shown in the footer hint bar).
+  useEffect(() => {
+    const order = ['sources', 'messaging', 'memory'] as const;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key !== '[' && e.key !== ']') return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return;
+      e.preventDefault();
+      setActiveTab((cur) => {
+        const i = order.indexOf(cur);
+        return order[Math.min(order.length - 1, Math.max(0, i + (e.key === ']' ? 1 : -1)))];
+      });
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   return (
-    <div className="flex-1 overflow-y-auto px-6 py-10">
-      <div className="max-w-5xl mx-auto">
-      <header className="mb-6">
-        <h1 className="text-lg font-semibold" style={{ color: 'var(--color-text)' }}>
-          Data Sources, Channels &amp; Memory
+    <div className="flex-1 overflow-y-auto px-6 md:px-14 pt-12 pb-16">
+      <div className="max-w-[1180px] mx-auto">
+      <header className="mb-10">
+        <h1 className="sn-lede text-[30px] md:text-[36px] max-w-[880px]">
+          <b>Data sources, channels and memory.</b> Connect your data so the assistant can search it, and chat from your phone.
         </h1>
-        <p className="text-sm mt-2 max-w-2xl" style={{ color: 'var(--color-text-secondary)' }}>
-          Connect personal data so the assistant can search across everything, and set up messaging channels to chat from your phone.
-        </p>
       </header>
 
-      <div
-        className="flex gap-1 mb-6"
-        style={{ borderBottom: '1px solid var(--color-border)' }}
-      >
-        {tabs.map((tab) => {
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className="relative px-4 py-2.5 text-sm transition-colors cursor-pointer"
-              style={{
-                color: isActive ? 'var(--color-text)' : 'var(--color-text-secondary)',
-                fontWeight: isActive ? 600 : 400,
-              }}
-            >
-              {tab.label}
-              {isActive && (
-                <motion.span
-                  layoutId="data-sources-tab-indicator"
-                  className="absolute left-0 right-0 -bottom-px h-[2px]"
-                  style={{ background: 'var(--color-text)' }}
-                  transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-                />
-              )}
-            </button>
-          );
-        })}
+      <div className="mb-8">
+        <PillTabs tabs={tabs} value={activeTab} onChange={setActiveTab} showKeys ariaLabel="Data sources sections" />
       </div>
 
       <div>

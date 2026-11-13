@@ -1,14 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Palette,
   Globe,
   Cpu,
   Database,
   Info,
   Check,
-  Sun,
-  Moon,
-  Monitor,
   Download,
   Upload,
   Trash2,
@@ -18,7 +14,10 @@ import {
   Brain,
   RefreshCw,
 } from 'lucide-react';
-import { useAppStore, type ThemeMode } from '../lib/store';
+import { useAppStore } from '../lib/store';
+import { useHeroStore, startHeroRefresh } from '../lib/hero';
+import { PhotoCredit } from '../components/HeroPhoto';
+import { modKey } from '../components/HintBar';
 import {
   checkHealth,
   fetchSpeechHealth,
@@ -201,33 +200,121 @@ function CloudProviderStatus({ label, keyName }: { label: string; keyName: strin
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+const SECTIONS = [
+  'Appearance',
+  'Connection',
+  'Inference source',
+  'Models',
+  'API keys',
+  'Tools',
+  'Memory',
+  'Model defaults',
+  'Speech',
+  'Data',
+  'Updates',
+  'About',
+] as const;
+
+const sectionId = (title: string) => `settings-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+
+function Section({ title, children }: { title: (typeof SECTIONS)[number]; children: React.ReactNode }) {
+  const n = SECTIONS.indexOf(title) + 1;
   return (
-    <div
-      className="rounded-xl p-5"
-      style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
-    >
-      <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--color-text)' }}>
-        {title}
-      </h3>
+    <section id={sectionId(title)} data-settings-section={title} className="sn-card px-6 pt-5 pb-3 scroll-mt-6">
+      <div className="sn-section-head mb-1">
+        <span className="sn-index">{`00.${n}`}</span>
+        <h3 className="flex-1 text-[15px] font-normal" style={{ color: 'var(--color-text)' }}>{title}</h3>
+      </div>
       {children}
-    </div>
+    </section>
   );
 }
 
 function SettingRow({ label, description, children }: { label: string; description?: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between py-3" style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
+    <div className="sn-setting-row flex items-center justify-between gap-6 py-3.5">
       <div className="min-w-0">
-        <div className="text-sm" style={{ color: 'var(--color-text)' }}>{label}</div>
+        <div className="text-[13.5px]" style={{ color: 'var(--color-text)' }}>{label}</div>
         {description && (
-          <div className="text-xs mt-0.5 break-words" style={{ color: 'var(--color-text-tertiary)' }}>{description}</div>
+          <div className="text-xs mt-1 break-words" style={{ color: 'var(--color-text-tertiary)' }}>{description}</div>
         )}
       </div>
-      <div>{children}</div>
+      <div className="shrink-0">{children}</div>
     </div>
   );
 }
+
+/** Left rail of settings sections: scroll spy, click to jump, [ and ] to step. */
+function SectionRail({ scrollRef }: { scrollRef: React.RefObject<HTMLDivElement | null> }) {
+  const [active, setActive] = useState<string>(SECTIONS[0]);
+
+  useEffect(() => {
+    const root = scrollRef.current;
+    if (!root) return;
+    const onScroll = () => {
+      const top = root.getBoundingClientRect().top;
+      const all = root.querySelectorAll<HTMLElement>('[data-settings-section]');
+      let current: string = SECTIONS[0];
+      all.forEach((el) => {
+        if (el.getBoundingClientRect().top - top <= 96) current = el.dataset.settingsSection || current;
+      });
+      if (root.scrollTop > 0 && root.scrollTop + root.clientHeight >= root.scrollHeight - 4) {
+        current = all[all.length - 1]?.dataset.settingsSection || current;
+      }
+      setActive(current);
+    };
+    onScroll();
+    root.addEventListener('scroll', onScroll, { passive: true });
+    return () => root.removeEventListener('scroll', onScroll);
+  }, [scrollRef]);
+
+  const jump = useCallback((title: string) => {
+    document.getElementById(sectionId(title))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setActive(title);
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key !== '[' && e.key !== ']') return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return;
+      const present = SECTIONS.filter((title) => document.getElementById(sectionId(title)));
+      const i = present.indexOf(active as (typeof SECTIONS)[number]);
+      const next = present[Math.min(present.length - 1, Math.max(0, i + (e.key === ']' ? 1 : -1)))];
+      if (next) {
+        e.preventDefault();
+        jump(next);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [active, jump]);
+
+  return (
+    <nav className="hidden lg:flex flex-col gap-0.5 w-[200px] shrink-0 sticky top-0 self-start pt-1" aria-label="Settings sections">
+      {SECTIONS.map((title, i) => {
+        const isActive = active === title;
+        return (
+          <button
+            key={title}
+            onClick={() => jump(title)}
+            className="flex items-center gap-3 h-9 px-3 rounded-lg text-left text-[13.5px] cursor-pointer transition-colors"
+            style={{
+              color: isActive ? 'var(--color-text)' : 'var(--color-text-secondary)',
+              background: isActive ? 'var(--color-bg-tertiary)' : 'transparent',
+            }}
+            aria-current={isActive ? 'true' : undefined}
+          >
+            <span className="text-xs tabular-nums w-7" style={{ color: 'var(--color-text-tertiary)' }}>{`00.${i + 1}`}</span>
+            {title}
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
 
 type MemoryStatus =
   | { kind: 'loading' }
@@ -279,11 +366,64 @@ export function MemoryStatusRow({
   );
 }
 
-const themeOptions: { value: ThemeMode; label: string; icon: typeof Sun }[] = [
-  { value: 'light', label: 'Light', icon: Sun },
-  { value: 'dark', label: 'Dark', icon: Moon },
-  { value: 'system', label: 'System', icon: Monitor },
-];
+function HeroPhotoSettings({ onSaved }: { onSaved: () => void }) {
+  const status = useHeroStore((s) => s.status);
+  const updateHero = useHeroStore((s) => s.updateSettings);
+  const [error, setError] = useState('');
+  useEffect(() => startHeroRefresh(), []);
+
+  const save = async (patch: { enabled?: boolean; theme?: string }) => {
+    setError('');
+    try {
+      await updateHero(patch);
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  if (!status) {
+    return (
+      <SettingRow label="Hero photo" description="Photo settings are unavailable until the server is reachable">
+        <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>Unavailable</span>
+      </SettingRow>
+    );
+  }
+
+  const enabled = status.settings.enabled;
+  const source = status.unsplash_configured
+    ? `A new Unsplash photo every ${status.rotation_hours} hours, behind the dashboard and the empty chat`
+    : `Set UNSPLASH_ACCESS_KEY on the server for Unsplash photos; until then bundled photos rotate every ${status.rotation_hours} hours`;
+
+  return (
+    <>
+      <SettingRow label="Rotate hero photo" description={source}>
+        <button
+          onClick={() => void save({ enabled: !enabled })}
+          className="sn-toggle"
+          role="switch"
+          aria-checked={enabled}
+          aria-label="Rotate hero photo"
+        />
+      </SettingRow>
+      <SettingRow label="Photo theme" description={error || 'What the photos show. Changing it fetches a new photo now'}>
+        <select
+          value={status.settings.theme}
+          onChange={(e) => void save({ theme: e.target.value })}
+          disabled={!status.unsplash_configured || !enabled}
+          className="sn-input cursor-pointer"
+        >
+          {status.themes.map((t) => (
+            <option key={t.id} value={t.id}>{t.label}</option>
+          ))}
+        </select>
+      </SettingRow>
+      <div className="pt-3">
+        <PhotoCredit />
+      </div>
+    </>
+  );
+}
 
 export function SettingsPage() {
   const settings = useAppStore((s) => s.settings);
@@ -294,6 +434,7 @@ export function SettingsPage() {
   const [speechBackendAvailable, setSpeechBackendAvailable] = useState<boolean | null>(null);
   const [ttsBackend, setTtsBackend] = useState<{ available: boolean; backend?: string; voice_id?: string } | null>(null);
   const [saved, setSaved] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(() => !isAutoUpdateDisabled());
   const [updateCheckState, setUpdateCheckState] = useState<'idle' | 'checking' | 'available' | 'latest'>('idle');
@@ -454,52 +595,30 @@ export function SettingsPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto px-6 py-10">
-      <div className="max-w-2xl mx-auto">
-        <header className="mb-6">
-          <div className="flex items-center justify-between gap-3">
-            <h1 className="text-lg font-semibold" style={{ color: 'var(--color-text)' }}>
-              Settings
+    <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 md:px-14 pt-12 pb-16">
+      <div className="max-w-[1080px] mx-auto">
+        <header className="mb-10">
+          <div className="flex items-end justify-between gap-3">
+            <h1 className="sn-lede text-[36px]">
+              <b>Settings</b> for this app: appearance, models, keys and data.
             </h1>
             {saved && (
-              <span className="flex items-center gap-1 text-xs px-2 py-1 rounded-full" style={{
-                background: 'var(--color-accent-subtle)',
-                color: 'var(--color-success)',
-              }}>
-                <Check size={12} /> Saved
+              <span className="sn-pill shrink-0" style={{ color: 'var(--color-text)' }}>
+                <Check size={12} style={{ color: 'var(--color-success)' }} /> Saved
               </span>
             )}
           </div>
-          <p className="text-sm mt-2 max-w-2xl" style={{ color: 'var(--color-text-secondary)' }}>
-            App preferences — appearance, model defaults, keyboard shortcuts, and data management.
+          <p className="text-xs mt-3" style={{ color: 'var(--color-text-tertiary)' }}>
+            Press <kbd className="sn-kbd">[</kbd> or <kbd className="sn-kbd">]</kbd> to step through sections, <kbd className="sn-kbd">{modKey('K')}</kbd> to pick a model.
           </p>
         </header>
 
-        <div className="flex flex-col gap-4">
+        <div className="flex gap-10">
+        <SectionRail scrollRef={scrollRef} />
+        <div className="flex-1 min-w-0 max-w-[760px] flex flex-col gap-6">
           {/* Appearance */}
           <Section title="Appearance">
-            <SettingRow label="Theme" description="Choose how OpenJarvis looks">
-              <div className="flex gap-1 p-0.5 rounded-lg" style={{ background: 'var(--color-bg-secondary)' }}>
-                {themeOptions.map((opt) => {
-                  const isActive = settings.theme === opt.value;
-                  return (
-                    <button
-                      key={opt.value}
-                      onClick={() => { updateSettings({ theme: opt.value }); showSaved(); }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer"
-                      style={{
-                        background: isActive ? 'var(--color-surface)' : 'transparent',
-                        color: isActive ? 'var(--color-text)' : 'var(--color-text-tertiary)',
-                        boxShadow: isActive ? 'var(--shadow-sm)' : 'none',
-                      }}
-                    >
-                      <opt.icon size={14} />
-                      {opt.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </SettingRow>
+            <HeroPhotoSettings onSaved={showSaved} />
             <SettingRow label="Font size">
               <select
                 value={settings.fontSize}
@@ -634,7 +753,7 @@ export function SettingsPage() {
           </Section>
 
           {/* API Keys */}
-          <Section title="API Keys">
+          <Section title="API keys">
             <SettingRow label="OpenAI" description="GPT-4, GPT-3.5, etc.">
               <ApiKeyInput keyName="OPENAI_API_KEY" placeholder="sk-..." />
             </SettingRow>
@@ -670,18 +789,10 @@ export function SettingsPage() {
                   try { localStorage.setItem('openjarvis-memory-enabled', String(next)); } catch {}
                   showSaved();
                 }}
-                className="relative w-11 h-6 rounded-full transition-colors cursor-pointer"
-                style={{
-                  background: memoryEnabled ? 'var(--color-accent)' : 'var(--color-bg-tertiary)',
-                }}
+                className="sn-toggle"
+                role="switch"
+                aria-checked={memoryEnabled}
               >
-                <span
-                  className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full transition-transform bg-white"
-                  style={{
-                    transform: memoryEnabled ? 'translateX(20px)' : 'translateX(0)',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-                  }}
-                />
               </button>
             </SettingRow>
             <SettingRow label="Memory backend" description="Which retrieval engine to use">
@@ -757,7 +868,7 @@ export function SettingsPage() {
           </Section>
 
           {/* Model defaults */}
-          <Section title="Model Defaults">
+          <Section title="Model defaults">
             <SettingRow label="Temperature" description={`${settings.temperature}`}>
               <input
                 type="range"
@@ -787,55 +898,29 @@ export function SettingsPage() {
             <SettingRow label="Speech-to-Text" description="Enable microphone input for voice dictation">
               <button
                 onClick={() => { updateSettings({ speechEnabled: !settings.speechEnabled }); showSaved(); }}
-                className="relative w-11 h-6 rounded-full transition-colors cursor-pointer"
-                style={{
-                  background: settings.speechEnabled ? 'var(--color-accent)' : 'var(--color-bg-tertiary)',
-                }}
+                className="sn-toggle"
+                role="switch"
+                aria-checked={settings.speechEnabled}
               >
-                <span
-                  className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full transition-transform bg-white"
-                  style={{
-                    transform: settings.speechEnabled ? 'translateX(20px)' : 'translateX(0)',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-                  }}
-                />
               </button>
             </SettingRow>
             <SettingRow label="Text-to-Speech" description="Show a read-aloud button on assistant replies">
               <button
                 onClick={() => { updateSettings({ voiceOutputEnabled: !settings.voiceOutputEnabled }); showSaved(); }}
-                className="relative w-11 h-6 rounded-full transition-colors cursor-pointer"
-                style={{
-                  background: settings.voiceOutputEnabled ? 'var(--color-accent)' : 'var(--color-bg-tertiary)',
-                }}
+                className="sn-toggle"
+                role="switch"
+                aria-checked={settings.voiceOutputEnabled}
               >
-                <span
-                  className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full transition-transform bg-white"
-                  style={{
-                    transform: settings.voiceOutputEnabled ? 'translateX(20px)' : 'translateX(0)',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-                  }}
-                />
               </button>
             </SettingRow>
             <SettingRow label="Speak replies automatically" description="Read every assistant reply aloud as soon as it finishes">
               <button
                 onClick={() => { updateSettings({ voiceAutoplay: !settings.voiceAutoplay }); showSaved(); }}
                 disabled={!settings.voiceOutputEnabled}
-                className="relative w-11 h-6 rounded-full transition-colors cursor-pointer"
-                style={{
-                  background: settings.voiceAutoplay && settings.voiceOutputEnabled ? 'var(--color-accent)' : 'var(--color-bg-tertiary)',
-                  opacity: settings.voiceOutputEnabled ? 1 : 0.4,
-                  cursor: settings.voiceOutputEnabled ? 'pointer' : 'default',
-                }}
+                className="sn-toggle"
+                role="switch"
+                aria-checked={settings.voiceAutoplay && settings.voiceOutputEnabled}
               >
-                <span
-                  className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full transition-transform bg-white"
-                  style={{
-                    transform: settings.voiceAutoplay && settings.voiceOutputEnabled ? 'translateX(20px)' : 'translateX(0)',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-                  }}
-                />
               </button>
             </SettingRow>
             <SettingRow label="Voice" description="Backend and voice used for spoken replies">
@@ -956,7 +1041,7 @@ export function SettingsPage() {
           <Section title="About">
             <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
               <p className="mb-2">
-                <span className="font-semibold" style={{ color: 'var(--color-text)' }}>OpenJarvis</span> — Programming abstractions for on-device AI.
+                <span className="font-semibold" style={{ color: 'var(--color-text)' }}>Seneca</span> — Programming abstractions for on-device AI.
               </p>
               <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
                 Part of Intelligence Per Watt, a research initiative at Stanford SAIL.
@@ -981,6 +1066,7 @@ export function SettingsPage() {
               </div>
             </div>
           </Section>
+        </div>
         </div>
       </div>
     </div>

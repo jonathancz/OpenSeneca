@@ -1,0 +1,29 @@
+[
+  {
+    "file": "mediterranean-night.jpg",
+    "id": "nasa-iss067e302248",
+    "alt": "City lights along the North African coast at night, seen across the Mediterranean from the International Space Station",
+    "credit": "NASA, ISS Expedition 67",
+    "credit_url": "https://images.nasa.gov/details/iss067e302248",
+    "license": "Public domain (NASA imagery)",
+    "color": "#1a120c"
+  },
+  {
+    "file": "caspian-night.jpg",
+    "id": "nasa-iss069e091732",
+    "alt": "The night lights of Baku on the Caspian Sea, seen from the International Space Station",
+    "credit": "NASA, ISS Expedition 69",
+    "credit_url": "https://images.nasa.gov/details/iss069e091732",
+    "license": "Public domain (NASA imagery)",
+    "color": "#120d09"
+  },
+  {
+    "file": "himalaya-glaciers.jpg",
+    "id": "nasa-iss074e0603585",
+    "alt": "Glaciers flowing from the Himalayas onto the Tibetan Plateau, seen from the International Space Station",
+    "credit": "NASA, ISS Expedition 74",
+    "credit_url": "https://images.nasa.gov/details/iss074e0603585",
+    "license": "Public domain (NASA imagery)",
+    "color": "#3a3632"
+  }
+]

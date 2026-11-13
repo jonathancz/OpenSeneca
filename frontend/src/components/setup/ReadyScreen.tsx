@@ -1,4 +1,5 @@
-import { Sparkles, MessageSquare, ArrowRight } from 'lucide-react';
+import { MessageSquare, ArrowRight } from 'lucide-react';
+import { BrandMark } from '../TopBar';
 import { SOURCE_CATALOG } from '../../types/connectors';
 
 // ---------------------------------------------------------------------------
@@ -100,14 +101,14 @@ export function ReadyScreen({
       {/* Icon */}
       <div
         className="w-20 h-20 rounded-2xl flex items-center justify-center"
-        style={{ background: 'var(--color-accent-subtle)', color: 'var(--color-accent)' }}
+        style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
       >
-        <Sparkles size={36} />
+        <BrandMark size={34} />
       </div>
 
       {/* Headline */}
       <div>
-        <h2 className="text-2xl font-bold mb-2" style={{ color: 'var(--color-text)' }}>
+        <h2 className="text-[28px] font-light tracking-[-0.02em] mb-2" style={{ color: 'var(--color-text)' }}>
           You're all set!
         </h2>
         <p className="text-sm max-w-sm" style={{ color: 'var(--color-text-secondary)' }}>
@@ -120,7 +121,7 @@ export function ReadyScreen({
 
       {/* Starter queries */}
       <div className="w-full max-w-sm flex flex-col gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wider mb-1 text-left"
+        <p className="text-xs font-semibold mb-1 text-left"
           style={{ color: 'var(--color-text-tertiary)' }}>
           Try asking
         </p>

@@ -1,17 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import {
-  Zap,
-  Activity,
-  Thermometer,
-  DollarSign,
-  TrendingDown,
-  Cloud,
-  HardDrive,
-  Hash,
-  X,
-  Trophy,
-  ExternalLink,
-} from 'lucide-react';
+import { Cloud, HardDrive, X, Trophy, ExternalLink } from 'lucide-react';
+import { Figure, Kbd, SectionHead } from '../ui/seneca';
+import { modKey } from '../HintBar';
 import { useAppStore } from '../../lib/store';
 import { getBase } from '../../lib/api';
 
@@ -74,242 +64,213 @@ export function SystemPanel() {
 
   const promptK = (savings?.total_prompt_tokens ?? 0) / 1000;
   const completionK = (savings?.total_completion_tokens ?? 0) / 1000;
+  const isStreaming = useAppStore((s) => s.streamState.isStreaming);
+
+  const power = liveEnergy?.power_w ?? energy?.avg_power_w ?? 0;
+  const energyKJ = (liveEnergy?.energy_j ?? energy?.total_energy_j ?? 0) / 1000;
+  const thermal = Math.max(energy?.cpu_temp_c ?? 0, energy?.gpu_temp_c ?? 0);
+  const thermalLabel = thermal === 0 ? '' : thermal < 65 ? 'Cool' : thermal < 80 ? 'Warm' : 'Hot';
+  const localCost = savings?.local_cost ?? 0;
+  const costs = CLOUD_PRICING.map((provider) => ({
+    ...provider,
+    cost: (promptK * provider.input) / 1000 + (completionK * provider.output) / 1000,
+  }));
+  const maxCost = Math.max(localCost, ...costs.map((c) => c.cost), 0.0001);
+  const requests = savings?.total_calls ?? telemetry?.total_requests ?? 0;
+  const outTokens = savings?.total_completion_tokens ?? telemetry?.total_tokens ?? 0;
+  const [outValue, outUnit] = splitUnit(outTokens);
 
   return (
-    <div
-      className="flex flex-col h-full overflow-y-auto"
+    <aside
+      className="hidden md:flex flex-col h-full overflow-y-auto"
       style={{
-        width: 280,
-        minWidth: 280,
+        width: 320,
+        minWidth: 320,
         background: 'var(--color-bg)',
         borderLeft: '1px solid var(--color-border)',
       }}
+      aria-label="System panel"
     >
       {/* Header */}
       <div
-        className="flex items-center justify-between px-4 py-3 shrink-0"
-        style={{ borderBottom: '1px solid var(--color-border)' }}
+        className="flex items-center justify-between pl-6 pr-3 shrink-0"
+        style={{ height: 60, borderBottom: '1px solid var(--color-border)' }}
       >
-        <span className="text-xs font-semibold tracking-wide uppercase" style={{ color: 'var(--color-text-secondary)' }}>
+        <span className="text-[14px]" style={{ color: 'var(--color-text)' }}>
           System
         </span>
-        <button
-          onClick={toggleSystemPanel}
-          className="p-1 rounded-md transition-colors cursor-pointer"
-          style={{ color: 'var(--color-text-tertiary)' }}
-          title="Close panel"
-        >
-          <X size={14} />
-        </button>
+        <div className="flex items-center gap-1">
+          <Kbd>{modKey('I')}</Kbd>
+          <button
+            onClick={toggleSystemPanel}
+            className="w-8 h-8 flex items-center justify-center rounded-full transition-colors cursor-pointer"
+            style={{ color: 'var(--color-text-tertiary)' }}
+            title="Close panel"
+            aria-label="Close system panel"
+          >
+            <X size={14} />
+          </button>
+        </div>
       </div>
 
-      <div className="flex flex-col gap-4 p-4">
-        {/* Session Stats */}
+      <div className="flex flex-col gap-9 px-6 py-7">
+        {/* Session */}
         <section>
-          <h4 className="text-[11px] font-medium uppercase tracking-wide mb-2" style={{ color: 'var(--color-text-tertiary)' }}>
-            Session
-          </h4>
-          <div className="grid grid-cols-2 gap-2">
-            <MiniStat icon={Hash} label="Requests" value={String(savings?.total_calls ?? telemetry?.total_requests ?? 0)} />
-            <MiniStat icon={Hash} label="Output Tokens" value={formatNumber(savings?.total_completion_tokens ?? telemetry?.total_tokens ?? 0)} />
+          <SectionHead index="00.1" title="Session" />
+          <div className="grid grid-cols-2 gap-4 pt-5">
+            <div>
+              <div className="hud-label mb-2">Requests</div>
+              <Figure value={String(requests)} size={40} />
+            </div>
+            <div>
+              <div className="hud-label mb-2">Output tokens</div>
+              <Figure value={outValue} unit={outUnit} size={40} />
+            </div>
           </div>
         </section>
 
         {/* Device */}
         <section>
-          <h4 className="text-[11px] font-medium uppercase tracking-wide mb-2" style={{ color: 'var(--color-text-tertiary)' }}>
-            Device
-          </h4>
-          <div className="grid grid-cols-2 gap-2">
+          <SectionHead index="00.2" title="Device" right={thermalLabel} />
+          <div className="flex flex-col gap-4 pt-5">
+            <StatBar label="Power" value={power.toFixed(1)} unit="W" fraction={power / 80} live={isStreaming} />
+            <StatBar label="Energy" value={energyKJ.toFixed(1)} unit="kJ" />
             {energy?.cpu_temp_c != null && (
-              <MiniStat icon={Thermometer} label="CPU Temp" value={String(Math.round(energy.cpu_temp_c))} unit="°C" />
+              <StatBar label="CPU temp" value={String(Math.round(energy.cpu_temp_c))} unit="°C" fraction={energy.cpu_temp_c / 100} />
             )}
             {energy?.gpu_temp_c != null && (
-              <MiniStat icon={Thermometer} label="GPU Temp" value={String(Math.round(energy.gpu_temp_c))} unit="°C" />
+              <StatBar label="GPU temp" value={String(Math.round(energy.gpu_temp_c))} unit="°C" fraction={energy.gpu_temp_c / 100} />
             )}
-            <MiniStat
-              icon={Zap}
-              label="Power"
-              value={(liveEnergy?.power_w ?? energy?.avg_power_w ?? 0).toFixed(1)}
-              unit="W"
-            />
-            <MiniStat
-              icon={Activity}
-              label="Energy"
-              value={(
-                ((liveEnergy?.energy_j ?? energy?.total_energy_j ?? 0) / 1000)
-              ).toFixed(1)}
-              unit="kJ"
-            />
           </div>
         </section>
 
-
-        {/* Cost Comparison */}
+        {/* Cost comparison */}
         <section>
-          <h4 className="text-[11px] font-medium uppercase tracking-wide mb-2" style={{ color: 'var(--color-text-tertiary)' }}>
-            Cost Comparison
-          </h4>
-
-          {/* Local */}
-          <div
-            className="flex items-center gap-2 rounded-lg px-3 py-2 mb-2"
-            style={{ background: 'var(--color-accent-subtle)', border: '1px solid var(--color-accent)' }}
-          >
-            <HardDrive size={14} style={{ color: 'var(--color-accent)' }} />
-            <div className="flex-1 min-w-0">
-              <div className="text-xs font-medium truncate" style={{ color: 'var(--color-text)' }}>Local</div>
-            </div>
-            <div className="text-sm font-semibold" style={{ color: 'var(--color-success)' }}>
-              ${(savings?.local_cost ?? 0).toFixed(4)}
-            </div>
-          </div>
-
-          {/* Cloud providers */}
-          <div className="flex flex-col gap-1.5">
-            {CLOUD_PRICING.map((provider) => {
-              const cost = (promptK * provider.input) / 1000 + (completionK * provider.output) / 1000;
-              const saved = cost - (savings?.local_cost ?? 0);
+          <SectionHead index="00.3" title="Cost comparison" />
+          <div className="flex flex-col gap-4 pt-5">
+            <CostRow icon={HardDrive} name="Local" cost={localCost} fraction={localCost / maxCost} />
+            {costs.map((c) => {
+              const saved = c.cost - localCost;
               return (
-                <div
-                  key={provider.name}
-                  className="flex items-center gap-2 rounded-lg px-3 py-2"
-                  style={{
-                    background: provider.primary ? 'var(--color-bg-secondary)' : 'var(--color-bg-secondary)',
-                    border: provider.primary ? '1px solid var(--color-border-accent, var(--color-accent))' : '1px solid transparent',
-                  }}
-                >
-                  <Cloud size={14} style={{ color: 'var(--color-text-tertiary)' }} />
-                  <div className="flex-1 min-w-0">
-                    <div
-                      className="text-xs truncate"
-                      style={{
-                        color: provider.primary ? 'var(--color-text)' : 'var(--color-text-secondary)',
-                        fontWeight: provider.primary ? 500 : 400,
-                      }}
-                    >
-                      {provider.name}
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-xs font-mono" style={{ color: 'var(--color-text)' }}>
-                      ${cost.toFixed(4)}
-                    </div>
-                    {saved > 0.0001 && (
-                      <div className="text-[9px] flex items-center gap-0.5 justify-end" style={{ color: 'var(--color-success)' }}>
-                        <TrendingDown size={8} />
-                        ${saved.toFixed(4)}
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <CostRow
+                  key={c.name}
+                  icon={Cloud}
+                  name={c.name}
+                  cost={c.cost}
+                  fraction={c.cost / maxCost}
+                  strong={c.primary}
+                  saved={saved > 0.0001 ? saved : undefined}
+                />
               );
             })}
           </div>
-
-
         </section>
 
         {/* Leaderboard / Share */}
         <section>
-          <h4
-            className="text-[11px] font-medium uppercase tracking-wide mb-2"
-            style={{ color: 'var(--color-text-tertiary)' }}
-          >
-            Leaderboard
-          </h4>
-
+          <SectionHead index="00.4" title="Leaderboard" />
           <button
             onClick={() => setOptInModalOpen(true)}
-            className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 transition-colors cursor-pointer"
-            style={{
-              background: optInEnabled
-                ? 'var(--color-accent-subtle)'
-                : 'var(--color-bg-secondary)',
-              border: optInEnabled
-                ? '1px solid var(--color-accent)'
-                : '1px solid var(--color-border)',
-            }}
+            className="sn-card w-full flex items-center gap-3 px-4 h-12 mt-5 cursor-pointer text-left"
+            style={{ borderRadius: 'var(--radius-lg)' }}
           >
-            <Trophy
-              size={14}
-              style={{
-                color: optInEnabled ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
-              }}
-            />
-            <span
-              className="text-xs flex-1 text-left"
-              style={{
-                color: optInEnabled ? 'var(--color-accent)' : 'var(--color-text-secondary)',
-              }}
-            >
-              {optInEnabled ? 'Sharing Savings' : 'Share Your Savings'}
+            <Trophy size={14} strokeWidth={1.5} style={{ color: 'var(--color-text-tertiary)' }} />
+            <span className="text-[13px] flex-1" style={{ color: 'var(--color-text)' }}>
+              {optInEnabled ? 'Sharing savings' : 'Share your savings'}
             </span>
-            <span
-              className="text-[9px] px-1.5 py-0.5 rounded-full"
-              style={{
-                background: optInEnabled ? 'var(--color-accent)' : 'var(--color-bg-tertiary, var(--color-bg-secondary))',
-                color: optInEnabled ? 'white' : 'var(--color-text-tertiary)',
-              }}
-            >
-              {optInEnabled ? 'ON' : 'OFF'}
-            </span>
+            <span className="sn-toggle" role="switch" aria-checked={optInEnabled} aria-hidden="true" />
           </button>
 
           <a
             href="https://open-jarvis.github.io/OpenJarvis/leaderboard"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1.5 mt-1.5 px-3 py-1.5 text-[11px] rounded-lg transition-colors"
+            className="flex items-center gap-1.5 mt-3 text-xs transition-colors"
             style={{ color: 'var(--color-text-tertiary)' }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-accent)')}
+            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-text)')}
             onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-tertiary)')}
           >
-            <ExternalLink size={10} />
-            View Leaderboard
+            <ExternalLink size={11} />
+            View leaderboard
           </a>
         </section>
       </div>
-    </div>
+    </aside>
   );
 }
 
-function MiniStat({
-  icon: Icon,
+function StatBar({
   label,
   value,
   unit,
+  fraction,
+  live = false,
 }: {
-  icon: typeof Zap;
   label: string;
   value: string;
   unit?: string;
+  fraction?: number;
+  live?: boolean;
 }) {
+  const pct = fraction == null ? null : Math.max(0, Math.min(1, fraction)) * 100;
   return (
-    <div
-      className="rounded-lg px-2.5 py-2"
-      style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}
-    >
-      <div className="flex items-center gap-1 mb-0.5">
-        <Icon size={10} style={{ color: 'var(--color-accent)' }} />
-        <span className="text-[10px]" style={{ color: 'var(--color-text-tertiary)' }}>
-          {label}
+    <div>
+      <div className="flex items-baseline justify-between mb-2">
+        <span className="text-[12.5px]" style={{ color: 'var(--color-text-secondary)' }}>{label}</span>
+        <span className="text-[13px] tabular-nums" style={{ color: 'var(--color-text)' }}>
+          {value}
+          {unit && <span className="ml-1 text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>{unit}</span>}
         </span>
       </div>
-      <div className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
-        {value}
-        {unit && (
-          <span className="text-[10px] font-normal ml-0.5" style={{ color: 'var(--color-text-tertiary)' }}>
-            {unit}
-          </span>
-        )}
+      <div className="sn-bar">
+        {pct != null && <i style={{ width: `${pct}%`, background: live ? 'var(--color-accent)' : undefined }} />}
       </div>
     </div>
   );
 }
 
-function formatNumber(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
-  return String(n);
+function CostRow({
+  icon: Icon,
+  name,
+  cost,
+  fraction,
+  strong = false,
+  saved,
+}: {
+  icon: typeof Cloud;
+  name: string;
+  cost: number;
+  fraction: number;
+  strong?: boolean;
+  saved?: number;
+}) {
+  const text = cost.toFixed(4);
+  return (
+    <div>
+      <div className="flex items-center gap-2.5 mb-2">
+        <Icon size={13} strokeWidth={1.5} style={{ color: 'var(--color-text-tertiary)' }} />
+        <span className="text-[12.5px] flex-1 truncate" style={{ color: strong ? 'var(--color-text)' : 'var(--color-text-secondary)' }}>
+          {name}
+        </span>
+        <span className="text-[13px] tabular-nums" style={{ color: 'var(--color-text)' }}>
+          ${text.slice(0, -2)}
+          <span style={{ color: 'var(--color-text-tertiary)' }}>{text.slice(-2)}</span>
+        </span>
+      </div>
+      <div className="sn-bar">
+        <i style={{ width: `${Math.max(0, Math.min(1, fraction)) * 100}%`, background: strong ? 'var(--color-text)' : 'var(--color-text-tertiary)' }} />
+      </div>
+      {saved != null && (
+        <div className="text-[11.5px] mt-1.5 tabular-nums" style={{ color: 'var(--color-success)' }}>
+          ${saved.toFixed(4)} <span style={{ color: 'var(--color-text-tertiary)' }}>saved</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function splitUnit(n: number): [string, string] {
+  if (n >= 1_000_000) return [(n / 1_000_000).toFixed(1), 'M'];
+  if (n >= 1_000) return [(n / 1_000).toFixed(1), 'K'];
+  return [String(n), ''];
 }

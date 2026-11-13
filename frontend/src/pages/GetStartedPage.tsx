@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router';
+import { BrandMark } from '../components/TopBar';
 import {
   Sparkles,
   Download,
@@ -194,19 +195,19 @@ function HostedView() {
     <div className="text-center mb-14">
       <div
         className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-5"
-        style={{ background: 'var(--color-accent-subtle)', color: 'var(--color-accent)' }}
+        style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
       >
-        <Sparkles size={32} />
+        <BrandMark size={30} />
       </div>
-      <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--color-text)' }}>
-        OpenJarvis
+      <h1 className="text-[44px] font-light tracking-[-0.03em] mb-3" style={{ color: 'var(--color-text)' }}>
+        Seneca
       </h1>
       <p
         className="text-sm mb-6 leading-relaxed max-w-md mx-auto"
         style={{ color: 'var(--color-text-secondary)' }}
       >
         Private AI that runs on your hardware. Chat, tools, agents, and
-        energy profiling &mdash; no cloud required.
+        energy profiling, with no cloud required.
       </p>
 
       {healthy === true && (
@@ -258,12 +259,12 @@ function DesktopView() {
       <div className="text-center mb-14">
         <div
           className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-5"
-          style={{ background: 'var(--color-accent-subtle)', color: 'var(--color-accent)' }}
+          style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
         >
-          <Sparkles size={32} />
+          <BrandMark size={30} />
         </div>
-        <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--color-text)' }}>
-          OpenJarvis Desktop
+        <h1 className="text-[44px] font-light tracking-[-0.03em] mb-3" style={{ color: 'var(--color-text)' }}>
+          Seneca Desktop
         </h1>
         <p
           className="text-sm mb-4 leading-relaxed max-w-md mx-auto"
@@ -331,19 +332,19 @@ function SelfHostedView() {
       <div className="text-center mb-14">
         <div
           className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-5"
-          style={{ background: 'var(--color-accent-subtle)', color: 'var(--color-accent)' }}
+          style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text)', border: '1px solid var(--color-border)' }}
         >
-          <Sparkles size={32} />
+          <BrandMark size={30} />
         </div>
-        <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--color-text)' }}>
-          OpenJarvis
+        <h1 className="text-[44px] font-light tracking-[-0.03em] mb-3" style={{ color: 'var(--color-text)' }}>
+          Seneca
         </h1>
         <p
           className="text-sm mb-4 leading-relaxed max-w-md mx-auto"
           style={{ color: 'var(--color-text-secondary)' }}
         >
           Private AI that runs on your hardware. Chat, tools, agents, and
-          energy profiling &mdash; no cloud required.
+          energy profiling, with no cloud required.
         </p>
         <span
           className="inline-block text-[11px] font-mono px-2.5 py-1 rounded-full"
@@ -443,7 +444,7 @@ function SelfHostedView() {
       >
         <div className="flex items-center gap-2 mb-3">
           <Cpu size={14} style={{ color: 'var(--color-text-tertiary)' }} />
-          <h3 className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-tertiary)' }}>
+          <h3 className="text-xs font-semibold" style={{ color: 'var(--color-text-tertiary)' }}>
             System Requirements
           </h3>
         </div>
