@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Cloud, HardDrive, X, Trophy, ExternalLink } from 'lucide-react';
+import { Cloud, HardDrive, X } from 'lucide-react';
 import { Figure, Kbd, SectionHead } from '../ui/seneca';
 import { modKey } from '../HintBar';
 import { useAppStore } from '../../lib/store';
@@ -27,8 +27,6 @@ const CLOUD_PRICING = [
 export function SystemPanel() {
   const savings = useAppStore((s) => s.savings);
   const toggleSystemPanel = useAppStore((s) => s.toggleSystemPanel);
-  const optInEnabled = useAppStore((s) => s.optInEnabled);
-  const setOptInModalOpen = useAppStore((s) => s.setOptInModalOpen);
   const liveEnergy = useAppStore((s) => s.liveEnergy);
   const [energy, setEnergy] = useState<EnergyData | null>(null);
   const [telemetry, setTelemetry] = useState<TelemetryStats | null>(null);
@@ -164,35 +162,6 @@ export function SystemPanel() {
               );
             })}
           </div>
-        </section>
-
-        {/* Leaderboard / Share */}
-        <section>
-          <SectionHead index="00.4" title="Leaderboard" />
-          <button
-            onClick={() => setOptInModalOpen(true)}
-            className="sn-card w-full flex items-center gap-3 px-4 h-12 mt-5 cursor-pointer text-left"
-            style={{ borderRadius: 'var(--radius-lg)' }}
-          >
-            <Trophy size={14} strokeWidth={1.5} style={{ color: 'var(--color-text-tertiary)' }} />
-            <span className="text-[13px] flex-1" style={{ color: 'var(--color-text)' }}>
-              {optInEnabled ? 'Sharing savings' : 'Share your savings'}
-            </span>
-            <span className="sn-toggle" role="switch" aria-checked={optInEnabled} aria-hidden="true" />
-          </button>
-
-          <a
-            href="https://open-jarvis.github.io/OpenJarvis/leaderboard"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 mt-3 text-xs transition-colors"
-            style={{ color: 'var(--color-text-tertiary)' }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-text)')}
-            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-tertiary)')}
-          >
-            <ExternalLink size={11} />
-            View leaderboard
-          </a>
         </section>
       </div>
     </aside>

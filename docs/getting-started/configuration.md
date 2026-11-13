@@ -479,7 +479,7 @@ enabled = false
 
 Use `jarvis config set analytics.enabled true` to enable sharing or `false` to
 disable it, then restart the server and reload the frontend. This setting is
-independent of local telemetry and leaderboard participation. See
+independent of local telemetry. See
 [Telemetry](../telemetry.md) for the event catalog and sharing details.
 
 ### `[telemetry]` — Telemetry Persistence

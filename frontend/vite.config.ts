@@ -4,9 +4,6 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
-// VITE_SUPABASE_ANON_KEY is intentionally NOT required here: a missing key
-// disables the savings leaderboard at runtime (see src/lib/supabase.ts) rather
-// than failing the build, so the package/app stays publishable without it.
 // jarvis gui sets the proxy target without exposing an absolute API URL to the
 // browser, so requests stay on Vite's origin even on a custom frontend port.
 const apiTarget = process.env.OPENJARVIS_VITE_PROXY_TARGET
