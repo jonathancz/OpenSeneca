@@ -27,7 +27,7 @@ graph LR
 |---------|-------------|----------|-----------|------|
 | `SendBlueChannel` | `sendblue` | SendBlue iMessage/SMS API | — | API key + secret |
 | `TelegramChannel` | `telegram` | Telegram Bot API | `channel-telegram` | Bot token |
-| `DiscordChannel` | `discord` | Discord Bot API | `channel-discord` | Bot token |
+| `DiscordChannel` | `discord` | Discord Bot API | `channel-discord` | Bot token, allowed user ids |
 | `SlackChannel` | `slack` | Slack Web API | `channel-slack` | Bot + App tokens |
 | `WhatsAppChannel` | `whatsapp` | WhatsApp Business API | — | API token |
 | `WhatsAppBaileysChannel` | `whatsapp_baileys` | WhatsApp (Baileys) | — | QR code auth |
@@ -303,6 +303,36 @@ app_token = "YOUR_SLACK_APP_TOKEN"
 | `default_agent` | `str` | `simple` | Agent to use for handling inbound messages |
 
 Platform-specific settings are configured in nested sub-sections (e.g., `[channel.telegram]`, `[channel.discord]`).
+
+### Private Discord assistant
+
+The Discord channel is built for a private, single user assistant:
+
+- **Allowlist.** Only users in `allowed_user_ids` (or env `DISCORD_ALLOWED_USER_IDS`) are answered. An empty allowlist answers nobody. Dropped messages are logged at debug level without their content.
+- **DM only.** With `dm_only = true` (the default) server messages are ignored, and the bot asks Discord only for the `dm_messages` and `guilds` intents, so the privileged Message Content intent stays off.
+- **Long replies** are split at 2,000 characters on paragraph boundaries; code blocks are closed and reopened across chunks.
+- **Proactive messages.** `"captain"` (and `"discord"`) address the first allowlisted user: the adapter opens and caches the DM channel, so `/v1/channels/send`, the `channel_send` tool and scheduled agents (`discord:captain`) can reach them.
+- **Voice in.** A voice message (or audio attachment) is downloaded, checked against `max_voice_seconds` and 25 MB, transcribed locally with faster-whisper on CPU, and handed to the agent as text.
+- **Voice out.** Replies are spoken with Kokoro on CPU, encoded to OGG Opus and posted as a real Discord voice message (flag 8192 with duration and waveform). If speech fails, the reply goes out as text. `voice_replies` chooses when: `"mirror"` (voice for voice, text for text), `"always"` or `"never"`.
+
+```toml title="~/.openjarvis/config.toml"
+[channel]
+enabled = true
+default_channel = "discord"
+
+[channel.discord]
+# bot_token: prefer the DISCORD_BOT_TOKEN environment variable
+allowed_user_ids = "123456789012345678"
+dm_only = true
+voice_replies = "mirror"
+max_voice_seconds = 120
+tts_backend = "kokoro"   # outgoing voice, CPU
+voice_id = "bm_george"   # empty = the backend's default voice
+stt_model = "small"      # faster-whisper model for incoming voice, CPU int8
+stt_language = ""        # empty = detect
+```
+
+Voice needs the `speech` and `voice` extras (`uv sync --extra channel-discord --extra speech --extra voice`) and `espeak-ng`; the Docker setup is in [Docker deployment](../deployment/docker.md#private-discord-assistant).
 
 ---
 

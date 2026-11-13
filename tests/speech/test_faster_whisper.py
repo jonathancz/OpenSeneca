@@ -183,3 +183,41 @@ def test_faster_whisper_supported_formats():
         assert "wav" in formats
         assert "mp3" in formats
         assert "webm" in formats
+
+
+def test_faster_whisper_cpu_threads_and_beam_size_passed_through():
+    """Optional CPU thread cap and beam size reach faster-whisper."""
+    mock_info = MagicMock(language="en", language_probability=0.9, duration=1.0)
+    mock_model = MagicMock()
+    mock_model.transcribe.return_value = (iter(()), mock_info)
+
+    with patch(
+        "openjarvis.speech.faster_whisper.WhisperModel",
+        return_value=mock_model,
+    ) as model_cls:
+        backend = FasterWhisperBackend(
+            model_size="small",
+            device="cpu",
+            compute_type="int8",
+            cpu_threads=4,
+            beam_size=1,
+        )
+        backend.transcribe(b"ogg", format="ogg", language="en")
+
+    assert model_cls.call_args.kwargs["cpu_threads"] == 4
+    assert mock_model.transcribe.call_args.kwargs == {"language": "en", "beam_size": 1}
+
+
+def test_faster_whisper_defaults_leave_threads_and_beam_alone():
+    mock_info = MagicMock(language="en", language_probability=0.9, duration=1.0)
+    mock_model = MagicMock()
+    mock_model.transcribe.return_value = (iter(()), mock_info)
+
+    with patch(
+        "openjarvis.speech.faster_whisper.WhisperModel",
+        return_value=mock_model,
+    ) as model_cls:
+        FasterWhisperBackend(model_size="base", device="cpu").transcribe(b"x")
+
+    assert "cpu_threads" not in model_cls.call_args.kwargs
+    assert mock_model.transcribe.call_args.kwargs == {}

@@ -1262,9 +1262,26 @@ class TelegramChannelConfig:
 
 @dataclass(slots=True)
 class DiscordChannelConfig:
-    """Per-channel config for Discord."""
+    """Per-channel config for Discord.
+
+    ``allowed_user_ids`` is a comma separated list of Discord user ids (or
+    env ``DISCORD_ALLOWED_USER_IDS``); the first one is the owner that
+    ``"captain"`` addresses. Empty means nobody is answered.
+    """
 
     bot_token: str = ""
+    allowed_user_ids: str = ""
+    dm_only: bool = True
+    # "mirror" (voice in, voice out; text in, text out), "always", "never".
+    voice_replies: str = "mirror"
+    max_voice_seconds: int = 120
+    # Outgoing voice (CPU). Empty voice_id uses the backend's default voice.
+    tts_backend: str = "kokoro"
+    voice_id: str = ""
+    voice_speed: float = 1.0
+    # Incoming voice: faster-whisper on CPU, int8. Empty language = detect.
+    stt_model: str = "small"
+    stt_language: str = ""
 
 
 @dataclass(slots=True)
@@ -2367,6 +2384,10 @@ default_agent = "simple"
 
 # [channel.discord]
 # bot_token = ""  # Or set DISCORD_BOT_TOKEN env var
+# allowed_user_ids = ""  # Comma separated; or DISCORD_ALLOWED_USER_IDS env var
+# dm_only = true
+# voice_replies = "mirror"  # "mirror", "always", "never"
+# max_voice_seconds = 120
 
 # [channel.slack]
 # bot_token = ""  # Or set SLACK_BOT_TOKEN env var

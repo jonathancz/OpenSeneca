@@ -34,10 +34,15 @@ class FasterWhisperBackend(SpeechBackend):
         model_size: str = "base",
         device: str = "auto",
         compute_type: str = "float16",
+        cpu_threads: int = 0,
+        beam_size: Optional[int] = None,
     ) -> None:
         self._model_size = model_size
         self._device = device
         self._compute_type = compute_type
+        # 0 keeps CTranslate2's default thread count.
+        self._cpu_threads = max(0, int(cpu_threads))
+        self._beam_size = beam_size
         self._model: Optional[WhisperModel] = None
         self._last_error: Optional[str] = None
 
@@ -87,10 +92,14 @@ class FasterWhisperBackend(SpeechBackend):
                 )
                 raise ImportError(self._last_error)
             compute_type = self._resolve_compute_type()
+            model_kwargs = {}
+            if self._cpu_threads:
+                model_kwargs["cpu_threads"] = self._cpu_threads
             self._model = WhisperModel(
                 self._model_size,
                 device=self._device,
                 compute_type=compute_type,
+                **model_kwargs,
             )
         self._last_error = None
         return self._model
@@ -119,6 +128,8 @@ class FasterWhisperBackend(SpeechBackend):
                 kwargs = {}
                 if language:
                     kwargs["language"] = language
+                if self._beam_size:
+                    kwargs["beam_size"] = self._beam_size
 
                 segments_iter, info = model.transcribe(tmp.name, **kwargs)
                 segments_list = list(segments_iter)

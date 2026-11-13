@@ -1,0 +1,6 @@
+{
+  "source": "jfk.flac from the faster-whisper repo (JFK inaugural address, 1961, public domain)",
+  "model": "faster-whisper small, cpu, int8, beam_size=1, language=en",
+  "duration_seconds": 11.0,
+  "text": "And so, my fellow Americans, ask not what your country can do for you. Ask what you can do for your country."
+}

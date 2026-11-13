@@ -1,0 +1,16 @@
+# Private Discord assistant on top of docker-compose.yml:
+#
+#   docker compose -f deploy/docker/docker-compose.yml \
+#     -f deploy/docker/docker-compose.discord.yml up -d --build
+#
+# Needs DISCORD_BOT_TOKEN and DISCORD_ALLOWED_USER_IDS in the secrets env file.
+# Speech runs on CPU in this container; the caps below keep a laptop cool.
+services:
+  jarvis:
+    environment:
+      - OPENJARVIS_CONFIG=/home/openjarvis/config.discord.toml
+      # Kokoro (PyTorch) and faster-whisper threads.
+      - OMP_NUM_THREADS=4
+    volumes:
+      - ./config.discord.toml:/home/openjarvis/config.discord.toml:ro
+    cpus: ${OPENSENECA_JARVIS_CPUS:-4}

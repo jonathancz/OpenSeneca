@@ -1,12 +1,19 @@
-"""DiscordChannel — native Discord Bot API adapter."""
+"""DiscordChannel — native Discord Bot API adapter.
+
+Built for a private assistant: by default it only answers direct messages
+from an allowlist of Discord user ids, and it can send and receive real
+Discord voice messages (local Kokoro TTS out, local faster-whisper STT in).
+"""
 
 from __future__ import annotations
 
 import asyncio
 import logging
 import os
+import re
 import threading
-from typing import Any, Dict, List, Optional
+from collections import OrderedDict
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 from openjarvis.channels._stubs import (
     BaseChannel,
@@ -14,10 +21,52 @@ from openjarvis.channels._stubs import (
     ChannelMessage,
     ChannelStatus,
 )
+from openjarvis.channels.discord_voice import (
+    VoiceClip,
+    build_voice_clip,
+    chunk_message,
+    probe_duration,
+    text_for_speech,
+    upload_slot_payload,
+    voice_message_payload,
+)
 from openjarvis.core.events import EventBus, EventType
 from openjarvis.core.registry import ChannelRegistry
 
 logger = logging.getLogger(__name__)
+
+API_BASE = "https://discord.com/api/v10"
+
+VOICE_REPLY_MODES = ("mirror", "always", "never")
+# Discord's attachment cap for bots without boosts.
+MAX_VOICE_BYTES = 25 * 1024 * 1024
+# Rough Kokoro speaking rate, used to skip TTS for replies that would run
+# past ``max_voice_seconds`` anyway.
+_SPOKEN_CHARS_PER_SECOND = 14
+# Aliases that address the first allowlisted user (the owner) by DM.
+_OWNER_ALIASES = ("discord", "captain")
+_MAX_TRACKED_VOICE_MESSAGES = 256
+
+
+def _parse_user_ids(value: Union[str, Iterable[Any], None]) -> List[str]:
+    """Parse a comma/space separated string (or iterable) of Discord ids."""
+    if value is None:
+        return []
+    if isinstance(value, (int, str)):
+        items: Iterable[Any] = re.split(r"[\s,]+", str(value))
+    else:
+        items = value
+    ids: List[str] = []
+    for item in items:
+        text = str(item).strip()
+        if not text:
+            continue
+        if not text.isdigit():
+            logger.warning("Ignoring invalid Discord user id in allowlist")
+            continue
+        if text not in ids:
+            ids.append(text)
+    return ids
 
 
 @ChannelRegistry.register("discord")
@@ -30,6 +79,26 @@ class DiscordChannel(BaseChannel):
         Discord bot token.  Falls back to ``DISCORD_BOT_TOKEN`` env var.
     bus:
         Optional event bus for publishing channel events.
+    allowed_user_ids:
+        Discord user ids allowed to talk to the bot (comma separated string
+        or list). Falls back to ``DISCORD_ALLOWED_USER_IDS``. The first id is
+        the owner that ``"captain"`` and ``"discord"`` address. When empty,
+        every inbound message is dropped (fail closed).
+    dm_only:
+        Ignore messages sent in servers; only direct messages are handled.
+    voice_replies:
+        ``"mirror"`` (voice in gets voice out, text in gets text out),
+        ``"always"`` or ``"never"``.
+    max_voice_seconds:
+        Longest voice message accepted in, and produced out.
+    tts_backend, voice_id, voice_speed:
+        Text-to-speech settings for outgoing voice messages. Kokoro runs on
+        CPU.
+    stt_model, stt_language:
+        faster-whisper model size and optional language for incoming voice
+        messages (CPU, int8).
+    tts, transcriber:
+        Pre-built backends, mainly for tests.
     """
 
     channel_id = "discord"
@@ -39,9 +108,48 @@ class DiscordChannel(BaseChannel):
         bot_token: str = "",
         *,
         bus: Optional[EventBus] = None,
+        allowed_user_ids: Union[str, Iterable[Any], None] = None,
+        dm_only: bool = True,
+        voice_replies: str = "mirror",
+        max_voice_seconds: int = 120,
+        tts_backend: str = "kokoro",
+        voice_id: str = "",
+        voice_speed: float = 1.0,
+        stt_model: str = "small",
+        stt_language: str = "",
+        tts: Optional[Any] = None,
+        transcriber: Optional[Any] = None,
     ) -> None:
         self._token = bot_token or os.environ.get("DISCORD_BOT_TOKEN", "")
         self._bus = bus
+        if allowed_user_ids is None or allowed_user_ids == "":
+            allowed_user_ids = os.environ.get("DISCORD_ALLOWED_USER_IDS", "")
+        self._allowed_user_ids = _parse_user_ids(allowed_user_ids)
+        self._dm_only = bool(dm_only)
+        mode = (voice_replies or "mirror").strip().lower()
+        if mode not in VOICE_REPLY_MODES:
+            logger.warning(
+                "Unknown Discord voice_replies %r; using 'mirror'", voice_replies
+            )
+            mode = "mirror"
+        self._voice_replies = mode
+        self._max_voice_seconds = max(1, int(max_voice_seconds))
+        self._tts_backend = tts_backend or "kokoro"
+        self._voice_id = voice_id
+        self._voice_speed = float(voice_speed)
+        self._stt_model = stt_model or "small"
+        self._stt_language = stt_language or None
+        self._tts = tts
+        self._transcriber = transcriber
+        # One synthesis and one transcription at a time: both are CPU heavy.
+        self._tts_lock = threading.Lock()
+        self._stt_lock = threading.Lock()
+        # user id -> DM channel id, resolved once per user.
+        self._dm_channels: Dict[str, str] = {}
+        self._dm_lock = threading.Lock()
+        # Inbound voice message ids, so the reply can mirror them.
+        self._voice_inbound: "OrderedDict[str, None]" = OrderedDict()
+        self._voice_lock = threading.Lock()
         self._handlers: List[ChannelHandler] = []
         self._status = ChannelStatus.DISCONNECTED
         self._listener_thread: Optional[threading.Thread] = None
@@ -73,6 +181,13 @@ class DiscordChannel(BaseChannel):
                 logger.warning("No Discord bot token configured")
                 self._status = ChannelStatus.ERROR
                 return
+
+            if not self._allowed_user_ids:
+                logger.warning(
+                    "Discord allowed_user_ids is empty; every inbound message"
+                    " will be ignored. Set [channel.discord] allowed_user_ids"
+                    " or DISCORD_ALLOWED_USER_IDS."
+                )
 
             self._stop_event.clear()
             self._status = ChannelStatus.CONNECTING
@@ -140,7 +255,13 @@ class DiscordChannel(BaseChannel):
         conversation_id: str = "",
         metadata: Dict[str, Any] | None = None,
     ) -> bool:
-        """Send a message to a Discord channel via REST API."""
+        """Send a reply or a proactive message.
+
+        ``channel`` is a Discord channel id, an allowlisted user id, or one
+        of the aliases ``"captain"``/``"discord"`` (the owner's DM). Replies
+        go out as voice messages per ``voice_replies``; ``metadata={"voice":
+        True|False}`` forces the choice. Voice always falls back to text.
+        """
         if not self._token:
             logger.warning("Cannot send: no Discord bot token")
             return False
@@ -155,44 +276,401 @@ class DiscordChannel(BaseChannel):
             )
             return False
 
+        destination = self._resolve_destination(channel)
+        if not destination:
+            return False
+
+        if self._wants_voice(conversation_id, metadata) and self._send_voice(
+            destination, content
+        ):
+            self._publish_sent(destination, content, conversation_id)
+            return True
+        return self._send_text(destination, content, conversation_id)
+
+    # -- destinations ------------------------------------------------------------
+
+    def _headers(self) -> Dict[str, str]:
+        return {
+            "Authorization": f"Bot {self._token}",
+            "Content-Type": "application/json",
+        }
+
+    @property
+    def owner_id(self) -> str:
+        """The first allowlisted user id, or ``""``."""
+        return self._allowed_user_ids[0] if self._allowed_user_ids else ""
+
+    def is_allowed(self, user_id: str) -> bool:
+        """Whether *user_id* may talk to the bot."""
+        return str(user_id) in self._allowed_user_ids
+
+    def _resolve_destination(self, channel: str) -> str:
+        """Map an alias or allowlisted user id to a channel id."""
+        if channel in _OWNER_ALIASES:
+            if not self.owner_id:
+                logger.warning(
+                    "Cannot send to %r: no Discord allowed_user_ids configured",
+                    channel,
+                )
+                return ""
+            return self.dm_channel_for(self.owner_id)
+        if channel in self._allowed_user_ids:
+            return self.dm_channel_for(channel)
+        return channel
+
+    def dm_channel_for(self, user_id: str) -> str:
+        """Return (and cache) the DM channel id for *user_id*.
+
+        Uses ``POST /users/@me/channels``. The bot must share a server with
+        the user for Discord to allow the DM.
+        """
+        with self._dm_lock:
+            cached = self._dm_channels.get(user_id)
+            if cached:
+                return cached
+            try:
+                import httpx
+
+                resp = httpx.post(
+                    f"{API_BASE}/users/@me/channels",
+                    json={"recipient_id": user_id},
+                    headers=self._headers(),
+                    timeout=10.0,
+                )
+            except Exception:
+                logger.warning("Discord DM channel lookup failed", exc_info=True)
+                return ""
+            if resp.status_code >= 300:
+                logger.warning(
+                    "Discord DM channel lookup returned status %d", resp.status_code
+                )
+                return ""
+            try:
+                dm_id = str(resp.json()["id"])
+            except Exception:
+                logger.warning("Discord DM channel lookup returned no channel id")
+                return ""
+            self._dm_channels[user_id] = dm_id
+            return dm_id
+
+    # -- text --------------------------------------------------------------------
+
+    def _send_text(self, channel: str, content: str, conversation_id: str) -> bool:
+        """Post *content* in chunks of at most 2,000 characters."""
+        chunks = chunk_message(content)
+        if not chunks:
+            logger.warning("Cannot send: empty Discord message")
+            return False
         try:
             import httpx
 
-            url = f"https://discord.com/api/v10/channels/{channel}/messages"
-            headers = {
-                "Authorization": f"Bot {self._token}",
-                "Content-Type": "application/json",
-            }
-            payload: Dict[str, Any] = {"content": content}
-            if conversation_id:
-                payload["message_reference"] = {"message_id": conversation_id}
-
-            resp = httpx.post(
-                url,
-                json=payload,
-                headers=headers,
-                timeout=10.0,
-            )
-            if resp.status_code < 300:
-                self._publish_sent(channel, content, conversation_id)
-                return True
-            logger.warning(
-                "Discord API returned status %d: %s",
-                resp.status_code,
-                resp.text,
-            )
-            return False
+            url = f"{API_BASE}/channels/{channel}/messages"
+            for index, chunk in enumerate(chunks):
+                payload: Dict[str, Any] = {"content": chunk}
+                # Only the first chunk replies to the inbound message.
+                if conversation_id and index == 0:
+                    payload["message_reference"] = {"message_id": conversation_id}
+                resp = httpx.post(
+                    url,
+                    json=payload,
+                    headers=self._headers(),
+                    timeout=10.0,
+                )
+                if resp.status_code >= 300:
+                    logger.warning(
+                        "Discord API returned status %d: %s",
+                        resp.status_code,
+                        resp.text,
+                    )
+                    return False
+            self._publish_sent(channel, content, conversation_id)
+            return True
         except Exception:
             logger.debug("Discord send failed", exc_info=True)
             return False
+
+    # -- voice out ---------------------------------------------------------------
+
+    def _remember_voice(self, message_id: str) -> None:
+        with self._voice_lock:
+            self._voice_inbound[message_id] = None
+            while len(self._voice_inbound) > _MAX_TRACKED_VOICE_MESSAGES:
+                self._voice_inbound.popitem(last=False)
+
+    def _wants_voice(
+        self, conversation_id: str, metadata: Optional[Dict[str, Any]]
+    ) -> bool:
+        with self._voice_lock:
+            was_voice = bool(conversation_id) and conversation_id in self._voice_inbound
+            if was_voice:
+                del self._voice_inbound[conversation_id]
+        if metadata and "voice" in metadata:
+            return bool(metadata["voice"])
+        if self._voice_replies == "always":
+            return True
+        if self._voice_replies == "never":
+            return False
+        return was_voice
+
+    def _get_tts(self) -> Any:
+        if self._tts is None:
+            if self._tts_backend == "kokoro":
+                # CPU only: the GPU is reserved for the language model.
+                from openjarvis.speech.kokoro_tts import KokoroTTSBackend
+
+                self._tts = KokoroTTSBackend(device="cpu")
+            else:
+                from openjarvis.speech._tts_discovery import get_tts_backend
+
+                self._tts = get_tts_backend(self._tts_backend)
+                if self._tts is None:
+                    raise RuntimeError("no text-to-speech backend available")
+        return self._tts
+
+    def synthesize_voice(self, text: str) -> VoiceClip:
+        """Speak *text* and encode it as a Discord voice message clip."""
+        from openjarvis.speech._tts_discovery import default_voice_for
+
+        spoken = text_for_speech(text)
+        if not spoken:
+            raise ValueError("nothing to speak")
+        if len(spoken) > self._max_voice_seconds * _SPOKEN_CHARS_PER_SECOND:
+            raise ValueError("reply too long for a voice message")
+        with self._tts_lock:
+            tts = self._get_tts()
+            backend_id = getattr(tts, "backend_id", "")
+            voice = self._voice_id or default_voice_for(backend_id)
+            kwargs: Dict[str, Any] = {"speed": self._voice_speed}
+            if voice:
+                kwargs["voice_id"] = voice
+            if backend_id == "kokoro":
+                kwargs["output_format"] = "wav"
+            result = tts.synthesize(spoken, **kwargs)
+            if not result.audio:
+                raise ValueError("TTS returned no audio")
+            clip = build_voice_clip(result.audio)
+        if clip.duration_secs > self._max_voice_seconds:
+            raise ValueError("voice reply longer than max_voice_seconds")
+        return clip
+
+    def _send_voice(self, channel: str, content: str) -> bool:
+        """Upload *content* as a Discord voice message. False on any failure."""
+        try:
+            clip = self.synthesize_voice(content)
+        except Exception as exc:
+            logger.warning("Discord voice reply skipped, sending text: %s", exc)
+            return False
+        try:
+            return self.send_voice_clip(channel, clip)
+        except Exception:
+            logger.warning("Discord voice upload failed, sending text", exc_info=True)
+            return False
+
+    def send_voice_clip(self, channel: str, clip: VoiceClip) -> bool:
+        """Post *clip* to *channel* with the three step attachment upload."""
+        import httpx
+
+        slot = httpx.post(
+            f"{API_BASE}/channels/{channel}/attachments",
+            json=upload_slot_payload(clip),
+            headers=self._headers(),
+            timeout=10.0,
+        )
+        if slot.status_code >= 300:
+            logger.warning(
+                "Discord voice upload slot returned status %d", slot.status_code
+            )
+            return False
+        attachment = slot.json()["attachments"][0]
+        # The upload URL is a pre-signed storage URL: never send the bot
+        # token to it.
+        put = httpx.put(
+            attachment["upload_url"],
+            content=clip.ogg,
+            headers={"Content-Type": "audio/ogg"},
+            timeout=30.0,
+        )
+        if put.status_code >= 300:
+            logger.warning("Discord voice upload returned status %d", put.status_code)
+            return False
+        msg = httpx.post(
+            f"{API_BASE}/channels/{channel}/messages",
+            json=voice_message_payload(attachment["upload_filename"], clip),
+            headers=self._headers(),
+            timeout=10.0,
+        )
+        if msg.status_code >= 300:
+            logger.warning("Discord voice message returned status %d", msg.status_code)
+            return False
+        return True
+
+    # -- voice in ----------------------------------------------------------------
+
+    def _get_transcriber(self) -> Any:
+        if self._transcriber is None:
+            from openjarvis.speech.faster_whisper import FasterWhisperBackend
+
+            # CPU only, int8: a 30 s note takes about 10 s on four cores.
+            self._transcriber = FasterWhisperBackend(
+                model_size=self._stt_model,
+                device="cpu",
+                compute_type="int8",
+                cpu_threads=4,
+                beam_size=1,
+            )
+        return self._transcriber
+
+    def transcribe_voice(self, audio: bytes) -> str:
+        """Transcribe a voice message (OGG Opus) to text."""
+        with self._stt_lock:
+            result = self._get_transcriber().transcribe(
+                audio, format="ogg", language=self._stt_language
+            )
+        return (result.text or "").strip()
+
+    @staticmethod
+    def _voice_attachment(message: Any) -> Optional[Any]:
+        """Return the audio attachment of a voice message, if any."""
+        attachments = list(getattr(message, "attachments", None) or [])
+        if not attachments:
+            return None
+        flags = getattr(message, "flags", None)
+        if flags is not None and getattr(flags, "voice", False) is True:
+            return attachments[0]
+        for attachment in attachments:
+            content_type = getattr(attachment, "content_type", None) or ""
+            if content_type.startswith("audio/"):
+                return attachment
+        return None
+
+    async def _transcribe_attachment(
+        self, attachment: Any
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """Return ``(transcript, None)`` or ``(None, polite_refusal)``."""
+        limit = self._max_voice_seconds
+        size = getattr(attachment, "size", 0) or 0
+        if size > MAX_VOICE_BYTES:
+            return None, "That voice message is too large for me (25 MB limit)."
+        duration = getattr(attachment, "duration", None) or 0.0
+        if duration > limit:
+            return None, (
+                f"That voice message is {duration:.0f} seconds long; I can take"
+                f" up to {limit} seconds. Could you send a shorter one?"
+            )
+        try:
+            audio = await attachment.read()
+        except Exception:
+            logger.warning("Discord voice message download failed", exc_info=True)
+            return None, "Sorry, I could not download that voice message."
+        if not duration:
+            duration = await asyncio.to_thread(probe_duration, audio)
+            if duration > limit:
+                return None, (
+                    f"That voice message is {duration:.0f} seconds long; I can"
+                    f" take up to {limit} seconds. Could you send a shorter one?"
+                )
+        try:
+            text = await asyncio.to_thread(self.transcribe_voice, audio)
+        except Exception:
+            logger.warning("Discord voice transcription failed", exc_info=True)
+            return None, "Sorry, I could not transcribe that voice message."
+        if not text:
+            return None, "I could not make out any words in that voice message."
+        return text, None
+
+    async def _handle_gateway_message(self, message: Any, bot_user: Any = None) -> None:
+        """Filter, transcribe and dispatch one gateway message."""
+        author = message.author
+        if getattr(author, "bot", False) or (
+            bot_user is not None and author == bot_user
+        ):
+            return
+        message_id = str(message.id)
+        if self._dm_only and getattr(message, "guild", None) is not None:
+            logger.debug("Discord: dropped server message %s (dm_only)", message_id)
+            return
+        sender = str(author.id)
+        if not self.is_allowed(sender):
+            logger.debug(
+                "Discord: dropped message %s from non-allowlisted user %s",
+                message_id,
+                sender,
+            )
+            return
+
+        channel_id = str(message.channel.id)
+        content = message.content or ""
+        attachment = self._voice_attachment(message)
+        is_voice = attachment is not None
+        if is_voice:
+            transcript, refusal = await self._transcribe_attachment(attachment)
+            if refusal is not None:
+                await asyncio.to_thread(
+                    self.send,
+                    channel_id,
+                    refusal,
+                    conversation_id=message_id,
+                    metadata={"voice": False},
+                )
+                return
+            content = f"{content}\n\n{transcript}".strip() if content else transcript
+        if not content or not content.strip():
+            return
+
+        cm = ChannelMessage(
+            channel="discord",
+            sender=sender,
+            content=content,
+            message_id=message_id,
+            conversation_id=channel_id,
+            metadata={"voice": is_voice},
+        )
+        if is_voice:
+            self._remember_voice(message_id)
+        # Handlers run the agent (and TTS for the reply): keep them off the
+        # gateway event loop so heartbeats continue.
+        await asyncio.to_thread(self._dispatch, cm)
+
+    def _dispatch(self, cm: ChannelMessage) -> None:
+        for handler in self._handlers:
+            try:
+                handler(cm)
+            except Exception:
+                logger.exception("Discord handler error")
+        if self._bus is not None:
+            self._bus.publish(
+                EventType.CHANNEL_MESSAGE_RECEIVED,
+                {
+                    "channel": cm.channel,
+                    "sender": cm.sender,
+                    "content": cm.content,
+                    "message_id": cm.message_id,
+                },
+            )
+
+    def _warm_dm_cache(self) -> None:
+        """Resolve the owner's DM channel so proactive sends can find it."""
+        if self.owner_id:
+            self.dm_channel_for(self.owner_id)
+
+    # -- BaseChannel -------------------------------------------------------------
 
     def status(self) -> ChannelStatus:
         """Return the current connection status."""
         return self._status
 
     def list_channels(self) -> List[str]:
-        """Return available channel identifiers."""
-        return ["discord"]
+        """Return addressable destinations.
+
+        ``"discord"`` always; ``"captain"`` (the owner's DM) and the resolved
+        DM channel ids when an allowlist is configured.
+        """
+        names = ["discord"]
+        if self.owner_id:
+            names.append("captain")
+        with self._dm_lock:
+            names.extend(self._dm_channels.values())
+        return names
 
     def on_message(self, handler: ChannelHandler) -> None:
         """Register a callback for incoming messages."""
@@ -260,36 +738,29 @@ class DiscordChannel(BaseChannel):
         try:
             import discord
 
-            intents = discord.Intents.default()
-            intents.message_content = True
+            # DM only needs no privileged intent: Discord always delivers the
+            # content of direct messages to the bot.
+            intents = discord.Intents.none()
+            intents.dm_messages = True
+            intents.guilds = True
+            if not self._dm_only:
+                intents.guild_messages = True
+                intents.message_content = True
             client = discord.Client(intents=intents)
 
             @client.event
+            async def on_ready():
+                try:
+                    await asyncio.to_thread(self._warm_dm_cache)
+                except Exception:
+                    logger.debug("Discord DM cache warmup failed", exc_info=True)
+
+            @client.event
             async def on_message(message):
-                if message.author == client.user:
-                    return
-                cm = ChannelMessage(
-                    channel="discord",
-                    sender=str(message.author.id),
-                    content=message.content,
-                    message_id=str(message.id),
-                    conversation_id=str(message.channel.id),
-                )
-                for handler in self._handlers:
-                    try:
-                        handler(cm)
-                    except Exception:
-                        logger.exception("Discord handler error")
-                if self._bus is not None:
-                    self._bus.publish(
-                        EventType.CHANNEL_MESSAGE_RECEIVED,
-                        {
-                            "channel": cm.channel,
-                            "sender": cm.sender,
-                            "content": cm.content,
-                            "message_id": cm.message_id,
-                        },
-                    )
+                try:
+                    await self._handle_gateway_message(message, client.user)
+                except Exception:
+                    logger.exception("Discord message handling failed")
 
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)

@@ -1,0 +1,19 @@
+# Private Discord assistant: DM only, one allowlisted user, voice in and out.
+# Used by docker-compose.discord.yml (mounted read only, OPENJARVIS_CONFIG).
+# Secrets stay in the secrets env file, never here:
+#   DISCORD_BOT_TOKEN=...          the bot token
+#   DISCORD_ALLOWED_USER_IDS=...   your Discord user id (comma separated list)
+
+[channel]
+enabled = true
+default_channel = "discord"
+
+[channel.discord]
+dm_only = true
+# "mirror": a voice message gets a voice reply, text gets text.
+voice_replies = "mirror"
+max_voice_seconds = 120
+# Kokoro TTS and faster-whisper STT, both on CPU.
+tts_backend = "kokoro"
+voice_id = "bm_george"
+stt_model = "small"

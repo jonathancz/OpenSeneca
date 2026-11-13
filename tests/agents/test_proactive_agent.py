@@ -117,6 +117,28 @@ class TestNotificationChannel:
         assert channel.kwargs == {"bot_token": "configured-token"}
         channel.connect.assert_not_called()
 
+    def test_discord_is_configured_without_a_second_gateway(self):
+        """Discord sends over REST; connect() would open a duplicate gateway."""
+
+        class FakeDiscord:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+                self.connect = MagicMock()
+
+        with (
+            patch.object(ChannelRegistry, "contains", return_value=True),
+            patch.object(ChannelRegistry, "get", return_value=FakeDiscord),
+            patch("openjarvis.core.config.load_config", return_value=MagicMock()),
+            patch(
+                "openjarvis.system._channel_kwargs.build_channel_kwargs",
+                return_value={"allowed_user_ids": "123"},
+            ),
+        ):
+            channel = _build_notification_channel("discord:captain")
+
+        assert channel.kwargs == {"allowed_user_ids": "123"}
+        channel.connect.assert_not_called()
+
     def test_non_telegram_channel_keeps_connect_lifecycle(self):
         class FakeChannel:
             def __init__(self, **kwargs):
