@@ -307,6 +307,7 @@ class KokoroTTSBackend(TTSBackend):
             "af_sky",
             "am_adam",
             "am_michael",
+            "am_puck",
             # British English
             "bf_emma",
             "bf_isabella",

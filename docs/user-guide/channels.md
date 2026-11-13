@@ -327,7 +327,7 @@ dm_only = true
 voice_replies = "mirror"
 max_voice_seconds = 120
 tts_backend = "kokoro"   # outgoing voice, CPU
-voice_id = "bm_george"   # empty = the backend's default voice
+voice_id = "am_puck"     # empty = the backend's default voice
 voice_speed = 1.2        # Kokoro speaking rate (1.0 is about 160 words/min)
 preload_voice_models = true  # load STT and TTS at connect, not on the first note
 stt_model = "small"      # faster-whisper model for incoming voice, CPU int8

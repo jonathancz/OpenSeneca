@@ -1651,10 +1651,10 @@ class SpeechConfig:
     # Text-to-speech. ``voice_id`` is interpreted by ``tts_backend`` only --
     # voice IDs are not portable between backends, so if voice output falls
     # back to a different backend that backend's own default voice is used.
-    # Kokoro IDs: bm_george / bm_lewis (British male), bf_emma / bf_isabella
-    # (British female), af_* / am_* (American).
+    # Kokoro IDs: am_puck (Seneca's voice: casual US male), am_michael,
+    # af_heart (American), bm_george / bm_lewis (British male), bf_emma.
     tts_backend: str = "kokoro"  # "kokoro", "openai_tts", "cartesia", "elevenlabs"
-    voice_id: str = "bm_george"
+    voice_id: str = "am_puck"
     voice_speed: float = 1.0
 
 
