@@ -142,7 +142,7 @@ The `--engine` and `--model` flags in the `command` take precedence over the eng
       -f deploy/docker/docker-compose.discord.yml up -d --build
     ```
 
-The first voice message downloads the faster-whisper `small` and Kokoro weights into the `jarvis-cache` volume. See the [channels guide](../user-guide/channels.md#private-discord-assistant) for the behaviour.
+The first start downloads the faster-whisper `small` and Kokoro weights into the `jarvis-cache` volume (`preload_voice_models` loads them when the bot connects). See the [channels guide](../user-guide/channels.md#private-discord-assistant) for the behaviour.
 
 ## GPU Overrides
 

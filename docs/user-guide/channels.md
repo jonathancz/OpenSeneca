@@ -312,7 +312,7 @@ The Discord channel is built for a private, single user assistant:
 - **DM only.** With `dm_only = true` (the default) server messages are ignored, and the bot asks Discord only for the `dm_messages` and `guilds` intents, so the privileged Message Content intent stays off.
 - **Long replies** are split at 2,000 characters on paragraph boundaries; code blocks are closed and reopened across chunks.
 - **Proactive messages.** `"captain"` (and `"discord"`) address the first allowlisted user: the adapter opens and caches the DM channel, so `/v1/channels/send`, the `channel_send` tool and scheduled agents (`discord:captain`) can reach them.
-- **Voice in.** A voice message (or audio attachment) is downloaded, checked against `max_voice_seconds` and 25 MB, transcribed locally with faster-whisper on CPU, and handed to the agent as text.
+- **Voice in.** A voice message (or audio attachment) is downloaded, checked against `max_voice_seconds` and 25 MB (a note whose length cannot be determined is politely refused, in Spanish when `stt_language` or the message is Spanish), transcribed locally with faster-whisper on CPU, and handed to the agent as text.
 - **Voice out.** Replies are spoken with Kokoro on CPU, encoded to OGG Opus and posted as a real Discord voice message (flag 8192 with duration and waveform). If speech fails, the reply goes out as text. `voice_replies` chooses when: `"mirror"` (voice for voice, text for text), `"always"` or `"never"`.
 
 ```toml title="~/.openjarvis/config.toml"
