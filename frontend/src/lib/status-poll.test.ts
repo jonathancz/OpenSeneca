@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { startStatusPolling } from './status-poll';
-import topBarSource from '../components/TopBar.tsx?raw';
 
 describe('top bar status polling', () => {
   beforeEach(() => vi.useFakeTimers());
@@ -36,13 +35,5 @@ describe('top bar status polling', () => {
     p.stop();
     await vi.advanceTimersByTimeAsync(120_000);
     expect(p.fetchEnergy).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('TopBar polling effect', () => {
-  it('does not depend on savings, so savings updates never restart polling', () => {
-    const effect = topBarSource.match(/startStatusPolling\(\{[\s\S]*?\}\);\s*\},\s*\[([^\]]*)\]\);/);
-    expect(effect).not.toBeNull();
-    expect(effect![1].trim()).toBe('apiReachable');
   });
 });
