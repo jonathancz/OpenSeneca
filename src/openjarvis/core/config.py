@@ -1280,6 +1280,9 @@ class DiscordChannelConfig:
     voice_id: str = ""
     # Kokoro at 1.0 is about 160 words per minute; 1.2 sounds brisker.
     voice_speed: float = 1.2
+    # Gain on the synthesized voice (1.2 = 20% louder, about +1.6 dB), with a
+    # soft limiter so peaks do not distort.
+    volume: float = 1.2
     # Incoming voice: faster-whisper on CPU, int8. Empty language = detect.
     stt_model: str = "small"
     stt_language: str = ""

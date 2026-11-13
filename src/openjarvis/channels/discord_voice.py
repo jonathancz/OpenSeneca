@@ -204,11 +204,42 @@ def compute_waveform(pcm: Any, points: int = WAVEFORM_POINTS) -> str:
     return base64.b64encode(scaled.tobytes()).decode("ascii")
 
 
-def build_voice_clip(audio: bytes) -> VoiceClip:
-    """Turn TTS output (WAV, MP3, ...) into a Discord voice message clip."""
+LIMITER_THRESHOLD = 0.9
+
+
+def apply_gain(pcm: Any, gain: float) -> Any:
+    """Scale *pcm* by *gain*, then soft-limit peaks so they never clip.
+
+    Samples below ``LIMITER_THRESHOLD`` are scaled linearly; anything above
+    is compressed smoothly (tanh knee) towards, but never past, full scale,
+    so a louder voice does not distort.
+    """
+    import numpy as np
+
+    out = np.asarray(pcm, dtype=np.float32) * np.float32(gain)
+    if gain == 1.0:
+        return out
+    mag = np.abs(out)
+    over = mag > LIMITER_THRESHOLD
+    if np.any(over):
+        headroom = 1.0 - LIMITER_THRESHOLD
+        limited = LIMITER_THRESHOLD + headroom * np.tanh(
+            (mag[over] - LIMITER_THRESHOLD) / headroom
+        )
+        out[over] = np.sign(out[over]) * limited
+    return out.astype(np.float32, copy=False)
+
+
+def build_voice_clip(audio: bytes, *, gain: float = 1.0) -> VoiceClip:
+    """Turn TTS output (WAV, MP3, ...) into a Discord voice message clip.
+
+    ``gain`` scales the voice (1.2 is about +1.6 dB) behind a soft limiter.
+    """
     pcm = decode_to_pcm(audio)
     if pcm.size == 0:
         raise ValueError("TTS produced no audio")
+    if gain != 1.0:
+        pcm = apply_gain(pcm, gain)
     return VoiceClip(
         ogg=encode_ogg_opus(pcm),
         duration_secs=round(len(pcm) / VOICE_SAMPLE_RATE, 2),
@@ -249,6 +280,7 @@ __all__ = [
     "VOICE_FILENAME",
     "VOICE_MESSAGE_FLAG",
     "VoiceClip",
+    "apply_gain",
     "build_voice_clip",
     "chunk_message",
     "compute_waveform",

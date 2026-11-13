@@ -16,6 +16,8 @@ max_voice_seconds = 120
 # Kokoro TTS and faster-whisper STT, both on CPU.
 tts_backend = "kokoro"
 voice_id = "am_puck"
+# 20% louder than Kokoro's output (about +1.6 dB), soft-limited.
+volume = 1.2
 # Speaking rate; 1.0 sounded slow (about 160 words per minute).
 voice_speed = 1.2
 stt_model = "small"

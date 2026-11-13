@@ -847,6 +847,7 @@ class TestConfigWiring:
             'voice_replies = "always"\n'
             "max_voice_seconds = 90\n"
             "voice_speed = 1.25\n"
+            "volume = 1.3\n"
             "preload_voice_models = false\n"
         )
         cfg = load_config(cfg_file)
@@ -856,6 +857,7 @@ class TestConfigWiring:
         assert kwargs["voice_replies"] == "always"
         assert kwargs["max_voice_seconds"] == 90
         assert kwargs["voice_speed"] == 1.25
+        assert kwargs["volume"] == 1.3
         assert kwargs["preload_voice_models"] is False
         assert "bot_token" not in kwargs  # token stays in the environment
         ch = DiscordChannel(**kwargs)
@@ -870,6 +872,7 @@ class TestConfigWiring:
         assert cfg.max_voice_seconds == 120
         assert cfg.stt_model == "small"
         assert cfg.voice_speed == 1.2
+        assert cfg.volume == 1.2
         assert cfg.preload_voice_models is True
 
 
@@ -1029,3 +1032,60 @@ class TestPersonaMigration:
         soul = tmp_path / "SOUL.md"
         assert migrate_default_persona(soul) is False
         assert not soul.exists()
+
+
+class TestVoiceVolume:
+    def test_quiet_voice_is_scaled_by_gain(self):
+        import numpy as np
+
+        from openjarvis.channels.discord_voice import apply_gain
+
+        pcm = np.array([0.1, -0.5, 0.7, 0.0], dtype=np.float32)
+        out = apply_gain(pcm, 1.2)
+        np.testing.assert_allclose(out, pcm * 1.2, rtol=1e-6)
+
+    def test_loud_peaks_are_soft_limited_not_clipped(self):
+        import numpy as np
+
+        from openjarvis.channels.discord_voice import LIMITER_THRESHOLD, apply_gain
+
+        pcm = np.linspace(-1.0, 1.0, 2001, dtype=np.float32)
+        out = apply_gain(pcm, 1.2)
+        assert np.abs(out).max() < 1.0
+        # Monotonic (no folding), and loud input stays loud.
+        assert np.all(np.diff(out) >= 0)
+        assert np.abs(out).max() > LIMITER_THRESHOLD
+        # Below the knee the gain is linear.
+        quiet = np.abs(pcm) * 1.2 <= LIMITER_THRESHOLD
+        np.testing.assert_allclose(out[quiet], pcm[quiet] * 1.2, rtol=1e-6)
+
+    def test_unity_gain_is_untouched(self):
+        import numpy as np
+
+        from openjarvis.channels.discord_voice import apply_gain
+
+        pcm = np.array([0.99, -0.99], dtype=np.float32)
+        np.testing.assert_array_equal(apply_gain(pcm, 1.0), pcm)
+
+    def test_channel_applies_configured_volume(self):
+        tts = MagicMock(backend_id="kokoro")
+        tts.synthesize.return_value = TTSResult(audio=b"wav", format="wav")
+        with patch(
+            "openjarvis.channels.discord_channel.build_voice_clip",
+            return_value=_clip(1.0),
+        ) as build:
+            DiscordChannel(bot_token="t", tts=tts).synthesize_voice("Hi")
+            DiscordChannel(bot_token="t", tts=tts, volume=1.5).synthesize_voice("Hi")
+        assert [c.kwargs["gain"] for c in build.call_args_list] == [1.2, 1.5]
+
+    def test_louder_clip_end_to_end(self):
+        pytest.importorskip("av")
+        import numpy as np
+
+        from openjarvis.channels.discord_voice import build_voice_clip, decode_to_pcm
+
+        wav = _wav_bytes(1.0)  # 0.3 amplitude sine
+        plain = decode_to_pcm(build_voice_clip(wav).ogg)
+        louder = decode_to_pcm(build_voice_clip(wav, gain=1.2).ogg)
+        ratio = np.sqrt((louder**2).mean() / (plain**2).mean())
+        assert 1.1 < ratio < 1.3

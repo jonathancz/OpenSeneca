@@ -48,6 +48,8 @@ _SPOKEN_CHARS_PER_SECOND = 14
 _OWNER_ALIASES = ("discord", "captain")
 # Kokoro at 1.0 sounded slow to the owner (about 160 words per minute).
 DEFAULT_VOICE_SPEED = 1.2
+# The owner asked for the voice 20% louder (about +1.6 dB).
+DEFAULT_VOICE_VOLUME = 1.2
 _MAX_TRACKED_VOICE_MESSAGES = 256
 
 
@@ -97,6 +99,9 @@ class DiscordChannel(BaseChannel):
     tts_backend, voice_id, voice_speed:
         Text-to-speech settings for outgoing voice messages. Kokoro runs on
         CPU; ``voice_speed`` 1.2 is a brisk conversational pace.
+    volume:
+        Gain applied to the synthesized voice before encoding (1.2 is about
+        +1.6 dB), behind a soft limiter so peaks do not clip.
     preload_voice_models:
         Load the speech-to-text and text-to-speech models in the background
         once the gateway is ready, so the first voice note is not slowed by
@@ -122,6 +127,7 @@ class DiscordChannel(BaseChannel):
         tts_backend: str = "kokoro",
         voice_id: str = "",
         voice_speed: float = DEFAULT_VOICE_SPEED,
+        volume: float = DEFAULT_VOICE_VOLUME,
         stt_model: str = "small",
         stt_language: str = "",
         preload_voice_models: bool = True,
@@ -146,6 +152,7 @@ class DiscordChannel(BaseChannel):
         self._voice_id = voice_id
         self._voice_speed = float(voice_speed) if voice_speed else DEFAULT_VOICE_SPEED
         self._preload_voice_models = bool(preload_voice_models)
+        self._volume = float(volume) if volume and volume > 0 else 1.0
         self._voice_models_warmed = False
         self._stt_model = stt_model or "small"
         self._stt_language = stt_language or None
@@ -460,7 +467,7 @@ class DiscordChannel(BaseChannel):
             result = tts.synthesize(spoken, **kwargs)
             if not result.audio:
                 raise ValueError("TTS returned no audio")
-            clip = build_voice_clip(result.audio)
+            clip = build_voice_clip(result.audio, gain=self._volume)
         logger.info(
             "Discord voice reply: %.1f s of audio (%d chars, speed %.2f)"
             " synthesized in %.1f s",

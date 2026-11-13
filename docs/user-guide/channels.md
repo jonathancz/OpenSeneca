@@ -329,6 +329,7 @@ max_voice_seconds = 120
 tts_backend = "kokoro"   # outgoing voice, CPU
 voice_id = "am_puck"     # empty = the backend's default voice
 voice_speed = 1.2        # Kokoro speaking rate (1.0 is about 160 words/min)
+volume = 1.2             # voice gain (+1.6 dB), soft-limited so peaks never clip
 preload_voice_models = true  # load STT and TTS at connect, not on the first note
 stt_model = "small"      # faster-whisper model for incoming voice, CPU int8
 stt_language = ""        # empty = detect
