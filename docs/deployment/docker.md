@@ -124,7 +124,7 @@ The `--engine` and `--model` flags in the `command` take precedence over the eng
 
 ### Private Discord assistant
 
-`docker-compose.discord.yml` turns the stack into a DM only Discord assistant for one person, with voice messages in both directions. It mounts `config.discord.toml` (channel enabled, `dm_only = true`, `voice_replies = "mirror"`) and caps the `jarvis` container at 4 CPUs (`OPENSENECA_JARVIS_CPUS`), since Kokoro and faster-whisper run there on CPU.
+`docker-compose.discord.yml` turns the stack into a DM only Discord assistant for one person, with voice messages in both directions. It mounts `config.discord.toml` (channel enabled, `dm_only = true`, `voice_replies = "mirror"`) caps the `jarvis` container at 4 CPUs (`OPENSENECA_JARVIS_CPUS`), since Kokoro and faster-whisper run there on CPU, and keeps the chat model loaded in Ollama for 30 minutes between messages (`OPENSENECA_OLLAMA_KEEP_ALIVE`) so a reply after a pause does not wait for a reload.
 
 1. Create the bot in the [Discord Developer Portal](https://discord.com/developers/applications): turn **Public Bot** off; no privileged gateway intents are needed.
 2. Make a private server, invite the bot with the `bot` scope and the Send Messages, Attach Files, Read Message History and Send Voice Messages permissions. A bot can only DM users it shares a server with.

@@ -14,3 +14,10 @@ services:
     volumes:
       - ./config.discord.toml:/home/openjarvis/config.discord.toml:ro
     cpus: ${OPENSENECA_JARVIS_CPUS:-4}
+
+  ollama:
+    environment:
+      # Keep the chat model loaded between messages. Ollama's default (5 min)
+      # made a voice note after a pause wait ~16 s for qwen3.5:4b to reload.
+      # Idle residency costs VRAM only, no GPU compute.
+      - OLLAMA_KEEP_ALIVE=${OPENSENECA_OLLAMA_KEEP_ALIVE:-30m}
