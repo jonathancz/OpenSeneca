@@ -17,3 +17,11 @@ max_voice_seconds = 120
 tts_backend = "kokoro"
 voice_id = "bm_george"
 stt_model = "small"
+
+# The web UI's speech-to-text: same CPU-only model, so one download serves both.
+[speech]
+model = "small"
+device = "cpu"
+compute_type = "int8"
+tts_backend = "kokoro"
+voice_id = "bm_george"
