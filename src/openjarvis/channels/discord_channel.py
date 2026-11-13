@@ -51,6 +51,22 @@ DEFAULT_VOICE_SPEED = 1.2
 # The owner asked for the voice 20% louder (about +1.6 dB).
 DEFAULT_VOICE_VOLUME = 1.2
 _MAX_TRACKED_VOICE_MESSAGES = 256
+_SPANISH_MARKS = re.compile(r"[ñ¿¡áéíóú]", re.IGNORECASE)
+_SPANISH_WORDS = frozenset(
+    "el la los las de que y en un una por para con es está qué cómo"
+    " hola gracias pero muy esto eso esta este mi tu".split()
+)
+
+
+def _looks_spanish(text: str) -> bool:
+    """Guess whether a short message is written in Spanish."""
+    if not text or not text.strip():
+        return False
+    if _SPANISH_MARKS.search(text):
+        return True
+    words = re.findall(r"[a-zA-Z]+", text.lower())
+    hits = sum(1 for word in words if word in _SPANISH_WORDS)
+    return hits >= 2 or (bool(words) and hits / len(words) >= 0.3)
 
 
 def _parse_user_ids(value: Union[str, Iterable[Any], None]) -> List[str]:
@@ -570,10 +586,9 @@ class DiscordChannel(BaseChannel):
         """Load the STT and TTS models now instead of on the first voice note."""
         started = time.monotonic()
         try:
-            transcriber = self._get_transcriber()
-            ensure = getattr(transcriber, "_ensure_model", None)
-            if callable(ensure):
-                with self._stt_lock:
+            with self._stt_lock:
+                ensure = getattr(self._get_transcriber(), "_ensure_model", None)
+                if callable(ensure):
                     ensure()
         except Exception as exc:
             logger.warning("Discord speech-to-text preload failed: %s", exc)
@@ -610,8 +625,13 @@ class DiscordChannel(BaseChannel):
                 return attachment
         return None
 
+    def _replies_in_spanish(self, text: str) -> bool:
+        if (self._stt_language or "").lower().startswith("es"):
+            return True
+        return _looks_spanish(text)
+
     async def _transcribe_attachment(
-        self, attachment: Any
+        self, attachment: Any, message_text: str = ""
     ) -> Tuple[Optional[str], Optional[str]]:
         """Return ``(transcript, None)`` or ``(None, polite_refusal)``."""
         limit = self._max_voice_seconds
@@ -635,6 +655,18 @@ class DiscordChannel(BaseChannel):
                 return None, (
                     f"That voice message is {duration:.0f} seconds long; I can"
                     f" take up to {limit} seconds. Could you send a shorter one?"
+                )
+            if not duration:
+                if self._replies_in_spanish(message_text):
+                    return None, (
+                        "No pude saber cuánto dura esa nota de voz, así que no la"
+                        f" transcribí. ¿Me mandas una de hasta {limit} segundos"
+                        " o me lo escribes?"
+                    )
+                return None, (
+                    "I could not tell how long that voice message is, so I did"
+                    f" not transcribe it. Could you send one of up to {limit}"
+                    " seconds, or type it?"
                 )
         try:
             text = await asyncio.to_thread(self.transcribe_voice, audio)
@@ -670,7 +702,7 @@ class DiscordChannel(BaseChannel):
         attachment = self._voice_attachment(message)
         is_voice = attachment is not None
         if is_voice:
-            transcript, refusal = await self._transcribe_attachment(attachment)
+            transcript, refusal = await self._transcribe_attachment(attachment, content)
             if refusal is not None:
                 await asyncio.to_thread(
                     self.send,

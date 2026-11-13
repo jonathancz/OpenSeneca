@@ -620,9 +620,14 @@ def test_mining_config_pool_parsed_as_pool_target(tmp_path):
     assert cfg.mining.submit_target.url == "https://pool.openjarvis.ai/submit"
 
 
-def test_seeded_persona_is_seneca():
+def test_seeded_persona_is_seneca(tmp_path, monkeypatch):
     """New installs seed SOUL.md with the Seneca persona."""
-    from openjarvis.cli._bootstrap import _DEFAULT_SOUL
+    from openjarvis.cli import _bootstrap
+    from openjarvis.core import config as cfg_mod
 
-    assert "You are Seneca" in _DEFAULT_SOUL
-    assert "Jarvis" not in _DEFAULT_SOUL
+    monkeypatch.setattr(cfg_mod, "DEFAULT_CONFIG_DIR", tmp_path)
+    _bootstrap._seed_memory_files()
+
+    soul = (tmp_path / "SOUL.md").read_text(encoding="utf-8")
+    assert "You are Seneca" in soul
+    assert "Jarvis" not in soul

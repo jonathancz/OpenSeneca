@@ -721,6 +721,53 @@ class TestVoiceIn:
         assert "11 seconds" in text
         assert attachment.reads == 1 and transcriber.calls == []
 
+    def _unknown_duration_refusal(self, ch, content: str = "") -> str:
+        seen = _collecting(ch)
+        http = FakeDiscordHTTP()
+        post, put = http.patched()
+        attachment = FakeAttachment(VOICE_NOTE.read_bytes(), duration=None)
+        probe = patch(
+            "openjarvis.channels.discord_channel.probe_duration", return_value=0.0
+        )
+        with post, put, probe:
+            _run(ch, _message(content=content, attachments=[attachment], voice=True))
+        assert seen == []
+        (reply,) = http.message_posts()
+        assert reply["json"]["message_reference"] == {"message_id": "555"}
+        assert "attachments" not in reply["json"]
+        return reply["json"]["content"]
+
+    def test_unknown_duration_refused_in_english(self):
+        ch, transcriber = self._channel(max_voice_seconds=120)
+        text = self._unknown_duration_refusal(ch)
+        assert "could not tell how long" in text
+        assert "120 seconds" in text
+        assert transcriber.calls == []
+
+    def test_unknown_duration_refused_in_spanish_by_stt_language(self):
+        ch, transcriber = self._channel(stt_language="es")
+        text = self._unknown_duration_refusal(ch)
+        assert "No pude saber cuánto dura" in text
+        assert transcriber.calls == []
+
+    def test_unknown_duration_refused_in_spanish_by_message_text(self):
+        ch, transcriber = self._channel()
+        text = self._unknown_duration_refusal(ch, content="hola, escucha esto")
+        assert "No pude saber cuánto dura" in text
+        assert transcriber.calls == []
+
+    def test_known_duration_skips_probe(self):
+        ch, transcriber = self._channel()
+        seen = _collecting(ch)
+        attachment = FakeAttachment(VOICE_NOTE.read_bytes(), duration=11.0)
+        with patch(
+            "openjarvis.channels.discord_channel.probe_duration", return_value=0.0
+        ) as probe:
+            _run(ch, _message(content="", attachments=[attachment], voice=True))
+        probe.assert_not_called()
+        assert len(transcriber.calls) == 1
+        assert seen[0].content == RECORDED["text"]
+
     def test_transcription_error_refused(self):
         ch, transcriber = self._channel()
         transcriber.transcribe = MagicMock(side_effect=RuntimeError("model load"))

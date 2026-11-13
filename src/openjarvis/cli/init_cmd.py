@@ -13,7 +13,7 @@ from rich.panel import Panel
 
 from openjarvis.cli._analytics_consent import apply_analytics_choice
 from openjarvis.cli._banner import print_banner
-from openjarvis.cli._bootstrap import detect_cloud_keys
+from openjarvis.cli._bootstrap import _DEFAULT_SOUL, detect_cloud_keys
 from openjarvis.cli.model import find_model_spec, hf_download, ollama_pull
 from openjarvis.cli.scan_cmd import PrivacyScanner
 from openjarvis.core.config import (
@@ -529,10 +529,7 @@ sources = ["hackernews", "news_rss"]
     # Create default memory files (skip if they already exist)
     soul_path = DEFAULT_CONFIG_DIR / "SOUL.md"
     if not soul_path.exists():
-        soul_path.write_text(
-            "# Agent Persona\n\nYou are Seneca, a helpful personal AI assistant.\n",
-            encoding="utf-8",
-        )
+        soul_path.write_text(_DEFAULT_SOUL, encoding="utf-8")
 
     memory_path = DEFAULT_CONFIG_DIR / "MEMORY.md"
     if not memory_path.exists():
