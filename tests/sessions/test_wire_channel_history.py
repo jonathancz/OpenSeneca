@@ -40,6 +40,11 @@ class TestWireChannelHistory:
         session = store.get_or_create(
             session_key, channel="telegram", channel_user_id="u1"
         )
+        # A session started under the current persona keeps its history
+        # (sessions from another persona are restarted; see test below).
+        store.set_metadata(
+            session.session_id, {"persona": minimal_system._persona_fingerprint()}
+        )
         store.save_message(session.session_id, "user", "hello", channel="telegram")
         store.save_message(
             session.session_id, "assistant", "hi there", channel="telegram"

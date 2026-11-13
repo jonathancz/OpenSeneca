@@ -897,3 +897,135 @@ def test_fixture_transcribes_on_cpu():
     text = ch.transcribe_voice(VOICE_NOTE.read_bytes())
     assert "fellow Americans" in text
     assert "your country" in text
+
+
+# ---------------------------------------------------------------------------
+# Identity on the Discord path
+# ---------------------------------------------------------------------------
+
+
+class TestDiscordIdentity:
+    """What the model actually receives for a Discord DM (#identity)."""
+
+    def _system(self, tmp_path):
+        from openjarvis.agents.simple import SimpleAgent
+        from openjarvis.core.config import JarvisConfig
+        from openjarvis.core.registry import AgentRegistry
+
+        if not AgentRegistry.contains("simple"):
+            AgentRegistry.register_value("simple", SimpleAgent)
+        from openjarvis.core.events import EventBus
+        from openjarvis.sessions.session import SessionStore
+        from openjarvis.system import JarvisSystem
+
+        config = JarvisConfig()
+        config.sessions.db_path = str(tmp_path / "sessions.db")
+        config.memory_files.soul_path = str(tmp_path / "SOUL.md")
+        captured: List[List[Any]] = []
+        engine = MagicMock()
+
+        def generate(messages, **_):
+            captured.append(list(messages))
+            return {"content": "I am Seneca.", "usage": {}}
+
+        engine.generate.side_effect = generate
+        system = JarvisSystem(
+            config=config,
+            bus=EventBus(record_history=False),
+            engine=engine,
+            engine_key="ollama",
+            model="qwen3.5:4b",
+            agent_name="simple",
+        )
+        store = SessionStore(db_path=tmp_path / "sessions.db")
+        system.session_store = store
+        ch = DiscordChannel(
+            bot_token="t", allowed_user_ids=OWNER, voice_replies="never"
+        )
+        system.wire_channel(ch)
+        return ch, captured, store
+
+    def _ask(self, ch, text, message_id="555"):
+        http = FakeDiscordHTTP()
+        post, put = http.patched()
+        with post, put:
+            _run(ch, _message(content=text, message_id=message_id))
+        return http
+
+    def test_system_prompt_names_seneca(self, tmp_path):
+        ch, captured, _ = self._system(tmp_path)
+        self._ask(ch, "Who are you?")
+        first = captured[0][0]
+        assert getattr(first.role, "value", first.role) == "system"
+        assert first.content.startswith("You are Seneca,")
+        assert all("OpenJarvis" not in m.content for m in captured[0])
+
+    def test_pre_rename_history_is_not_replayed(self, tmp_path):
+        from openjarvis.sessions.session import SessionStore
+
+        seed = SessionStore(db_path=tmp_path / "sessions.db")
+        key = f"discord:{DM_CHANNEL}"
+        old = seed.get_or_create(key, channel="discord", channel_user_id=OWNER)
+        seed.save_message(old.session_id, "user", "Hello", channel="discord")
+        seed.save_message(
+            old.session_id, "assistant", "I'm **OpenJarvis**.", channel="discord"
+        )
+        seed.close()
+
+        ch, captured, store = self._system(tmp_path)
+        self._ask(ch, "Who are you?")
+        sent = captured[0]
+        assert all("OpenJarvis" not in m.content for m in sent)
+        assert [m.content for m in sent[1:]] == ["Who are you?"]
+        # The old conversation is kept, just not replayed.
+        rows = store._conn.execute(
+            "SELECT COUNT(*) FROM session_messages WHERE session_id = ?",
+            (old.session_id,),
+        ).fetchone()[0]
+        assert rows == 2
+
+    def test_same_persona_keeps_conversation(self, tmp_path):
+        ch, captured, _ = self._system(tmp_path)
+        self._ask(ch, "My name is Jonathan.", message_id="555")
+        self._ask(ch, "What is my name?", message_id="556")
+        second = [m.content for m in captured[1]]
+        assert "My name is Jonathan." in second
+        assert "I am Seneca." in second
+
+    def test_soul_change_starts_fresh_session(self, tmp_path):
+        ch, captured, _ = self._system(tmp_path)
+        self._ask(ch, "First", message_id="555")
+        (tmp_path / "SOUL.md").write_text("# Agent Persona\n\nYou are Seneca, terse.\n")
+        # Re-wire so the fingerprint is recomputed (the server does this on start).
+        ch2, captured2, _ = self._system(tmp_path)
+        self._ask(ch2, "Second", message_id="556")
+        assert "First" not in [m.content for m in captured2[0]]
+
+
+class TestPersonaMigration:
+    def test_untouched_legacy_soul_is_migrated(self, tmp_path):
+        from openjarvis.cli._bootstrap import _DEFAULT_SOUL, migrate_default_persona
+
+        soul = tmp_path / "SOUL.md"
+        soul.write_text(
+            "# Agent Persona\n\nYou are Jarvis, a helpful personal AI assistant.\n",
+            encoding="utf-8",
+        )
+        assert migrate_default_persona(soul) is True
+        assert soul.read_text(encoding="utf-8") == _DEFAULT_SOUL
+
+    def test_edited_soul_is_left_alone(self, tmp_path):
+        from openjarvis.cli._bootstrap import migrate_default_persona
+
+        soul = tmp_path / "SOUL.md"
+        edited = "# Agent Persona\n\nYou are Jarvis, my butler. Be formal.\n"
+        soul.write_text(edited, encoding="utf-8")
+        assert migrate_default_persona(soul) is False
+        assert soul.read_text(encoding="utf-8") == edited
+
+    def test_missing_soul_is_not_created(self, tmp_path):
+        from openjarvis.cli._bootstrap import migrate_default_persona
+
+        soul = tmp_path / "SOUL.md"
+        assert migrate_default_persona(soul) is False
+        assert not soul.exists()

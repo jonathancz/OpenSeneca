@@ -165,6 +165,19 @@ def serve(
 
     config = load_config()
 
+    # A SOUL.md seeded before the rename to Seneca still says "Jarvis";
+    # replace it only when it is the untouched default.
+    try:
+        from pathlib import Path as _SoulPath
+
+        from openjarvis.cli._bootstrap import migrate_default_persona
+
+        _soul = _SoulPath(config.memory_files.soul_path).expanduser()
+        if migrate_default_persona(_soul):
+            logger.info("Migrated default persona in %s to Seneca", _soul)
+    except Exception as exc:
+        logger.debug("Persona migration skipped: %s", exc)
+
     # Resolve host/port from CLI args or config
     bind_host = host or config.server.host
     bind_port = port if port is not None else config.server.port
