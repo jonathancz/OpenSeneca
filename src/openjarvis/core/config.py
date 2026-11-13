@@ -1278,10 +1278,13 @@ class DiscordChannelConfig:
     # Outgoing voice (CPU). Empty voice_id uses the backend's default voice.
     tts_backend: str = "kokoro"
     voice_id: str = ""
-    voice_speed: float = 1.0
+    # Kokoro at 1.0 is about 160 words per minute; 1.2 sounds brisker.
+    voice_speed: float = 1.2
     # Incoming voice: faster-whisper on CPU, int8. Empty language = detect.
     stt_model: str = "small"
     stt_language: str = ""
+    # Load both speech models when the bot connects, not on the first note.
+    preload_voice_models: bool = True
 
 
 @dataclass(slots=True)
@@ -2388,6 +2391,7 @@ default_agent = "simple"
 # dm_only = true
 # voice_replies = "mirror"  # "mirror", "always", "never"
 # max_voice_seconds = 120
+# voice_speed = 1.2  # Kokoro speaking rate for voice replies
 
 # [channel.slack]
 # bot_token = ""  # Or set SLACK_BOT_TOKEN env var

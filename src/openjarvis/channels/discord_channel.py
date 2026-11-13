@@ -12,6 +12,7 @@ import logging
 import os
 import re
 import threading
+import time
 from collections import OrderedDict
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
@@ -45,6 +46,8 @@ MAX_VOICE_BYTES = 25 * 1024 * 1024
 _SPOKEN_CHARS_PER_SECOND = 14
 # Aliases that address the first allowlisted user (the owner) by DM.
 _OWNER_ALIASES = ("discord", "captain")
+# Kokoro at 1.0 sounded slow to the owner (about 160 words per minute).
+DEFAULT_VOICE_SPEED = 1.2
 _MAX_TRACKED_VOICE_MESSAGES = 256
 
 
@@ -93,7 +96,11 @@ class DiscordChannel(BaseChannel):
         Longest voice message accepted in, and produced out.
     tts_backend, voice_id, voice_speed:
         Text-to-speech settings for outgoing voice messages. Kokoro runs on
-        CPU.
+        CPU; ``voice_speed`` 1.2 is a brisk conversational pace.
+    preload_voice_models:
+        Load the speech-to-text and text-to-speech models in the background
+        once the gateway is ready, so the first voice note is not slowed by
+        model loading.
     stt_model, stt_language:
         faster-whisper model size and optional language for incoming voice
         messages (CPU, int8).
@@ -114,9 +121,10 @@ class DiscordChannel(BaseChannel):
         max_voice_seconds: int = 120,
         tts_backend: str = "kokoro",
         voice_id: str = "",
-        voice_speed: float = 1.0,
+        voice_speed: float = DEFAULT_VOICE_SPEED,
         stt_model: str = "small",
         stt_language: str = "",
+        preload_voice_models: bool = True,
         tts: Optional[Any] = None,
         transcriber: Optional[Any] = None,
     ) -> None:
@@ -136,7 +144,9 @@ class DiscordChannel(BaseChannel):
         self._max_voice_seconds = max(1, int(max_voice_seconds))
         self._tts_backend = tts_backend or "kokoro"
         self._voice_id = voice_id
-        self._voice_speed = float(voice_speed)
+        self._voice_speed = float(voice_speed) if voice_speed else DEFAULT_VOICE_SPEED
+        self._preload_voice_models = bool(preload_voice_models)
+        self._voice_models_warmed = False
         self._stt_model = stt_model or "small"
         self._stt_language = stt_language or None
         self._tts = tts
@@ -434,8 +444,10 @@ class DiscordChannel(BaseChannel):
         spoken = text_for_speech(text)
         if not spoken:
             raise ValueError("nothing to speak")
-        if len(spoken) > self._max_voice_seconds * _SPOKEN_CHARS_PER_SECOND:
+        max_chars = self._max_voice_seconds * _SPOKEN_CHARS_PER_SECOND
+        if len(spoken) > max_chars * max(self._voice_speed, 1.0):
             raise ValueError("reply too long for a voice message")
+        started = time.monotonic()
         with self._tts_lock:
             tts = self._get_tts()
             backend_id = getattr(tts, "backend_id", "")
@@ -449,6 +461,14 @@ class DiscordChannel(BaseChannel):
             if not result.audio:
                 raise ValueError("TTS returned no audio")
             clip = build_voice_clip(result.audio)
+        logger.info(
+            "Discord voice reply: %.1f s of audio (%d chars, speed %.2f)"
+            " synthesized in %.1f s",
+            clip.duration_secs,
+            len(spoken),
+            self._voice_speed,
+            time.monotonic() - started,
+        )
         if clip.duration_secs > self._max_voice_seconds:
             raise ValueError("voice reply longer than max_voice_seconds")
         return clip
@@ -461,7 +481,12 @@ class DiscordChannel(BaseChannel):
             logger.warning("Discord voice reply skipped, sending text: %s", exc)
             return False
         try:
-            return self.send_voice_clip(channel, clip)
+            started = time.monotonic()
+            sent = self.send_voice_clip(channel, clip)
+            logger.info(
+                "Discord voice reply uploaded in %.1f s", time.monotonic() - started
+            )
+            return sent
         except Exception:
             logger.warning("Discord voice upload failed, sending text", exc_info=True)
             return False
@@ -522,11 +547,46 @@ class DiscordChannel(BaseChannel):
 
     def transcribe_voice(self, audio: bytes) -> str:
         """Transcribe a voice message (OGG Opus) to text."""
+        started = time.monotonic()
         with self._stt_lock:
             result = self._get_transcriber().transcribe(
                 audio, format="ogg", language=self._stt_language
             )
+        logger.info(
+            "Discord voice note: %.1f s of audio transcribed in %.1f s",
+            getattr(result, "duration_seconds", 0.0) or 0.0,
+            time.monotonic() - started,
+        )
         return (result.text or "").strip()
+
+    def warm_voice_models(self) -> None:
+        """Load the STT and TTS models now instead of on the first voice note."""
+        started = time.monotonic()
+        try:
+            transcriber = self._get_transcriber()
+            ensure = getattr(transcriber, "_ensure_model", None)
+            if callable(ensure):
+                with self._stt_lock:
+                    ensure()
+        except Exception as exc:
+            logger.warning("Discord speech-to-text preload failed: %s", exc)
+        if self._voice_replies != "never":
+            try:
+                self.synthesize_voice("Ready.")
+            except Exception as exc:
+                logger.warning("Discord text-to-speech preload failed: %s", exc)
+        logger.info(
+            "Discord voice models preloaded in %.1f s", time.monotonic() - started
+        )
+
+    def _start_voice_warmup(self) -> None:
+        """Preload voice models once, in the background."""
+        if not self._preload_voice_models or self._voice_models_warmed:
+            return
+        self._voice_models_warmed = True
+        threading.Thread(
+            target=self.warm_voice_models, name="discord-voice-warmup", daemon=True
+        ).start()
 
     @staticmethod
     def _voice_attachment(message: Any) -> Optional[Any]:
@@ -750,6 +810,7 @@ class DiscordChannel(BaseChannel):
 
             @client.event
             async def on_ready():
+                self._start_voice_warmup()
                 try:
                     await asyncio.to_thread(self._warm_dm_cache)
                 except Exception:

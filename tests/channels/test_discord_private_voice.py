@@ -570,11 +570,27 @@ class TestVoiceOut:
         ch = DiscordChannel(bot_token="t", voice_id="bm_george", tts=tts)
         clip = ch.synthesize_voice("**Hello** from `Seneca`")
         tts.synthesize.assert_called_once_with(
-            "Hello from Seneca", voice_id="bm_george", speed=1.0, output_format="wav"
+            "Hello from Seneca", voice_id="bm_george", speed=1.2, output_format="wav"
         )
         assert clip.ogg.startswith(b"OggS")
         assert abs(clip.duration_secs - 1.0) < 0.1
         assert len(base64.b64decode(clip.waveform)) == 256
+
+    def test_voice_speed_is_configurable(self):
+        tts = MagicMock(backend_id="kokoro")
+        tts.synthesize.side_effect = RuntimeError("stop after the call")
+        ch = DiscordChannel(bot_token="t", tts=tts, voice_speed=1.15)
+        with pytest.raises(RuntimeError):
+            ch.synthesize_voice("Hi")
+        assert tts.synthesize.call_args.kwargs["speed"] == 1.15
+
+    def test_faster_speech_allows_proportionally_longer_text(self):
+        tts = MagicMock(backend_id="kokoro")
+        tts.synthesize.side_effect = RuntimeError("reached TTS")
+        # 10 s at 14 chars/s is 140 chars at speed 1.0; 168 at speed 1.2.
+        ch = DiscordChannel(bot_token="t", tts=tts, max_voice_seconds=10)
+        with pytest.raises(RuntimeError, match="reached TTS"):
+            ch.synthesize_voice("x" * 160)
 
     def test_default_kokoro_backend_is_cpu(self):
         ch = DiscordChannel(bot_token="t")
@@ -738,6 +754,39 @@ class TestVoiceIn:
         )
 
 
+class TestVoiceWarmup:
+    def test_warmup_loads_both_models(self):
+        transcriber = FakeTranscriber()
+        transcriber._ensure_model = MagicMock()
+        tts = MagicMock(backend_id="kokoro")
+        tts.synthesize.return_value = TTSResult(audio=b"", format="wav")
+        ch = DiscordChannel(bot_token="t", transcriber=transcriber, tts=tts)
+        ch.warm_voice_models()
+        transcriber._ensure_model.assert_called_once_with()
+        assert tts.synthesize.call_args.args == ("Ready.",)
+
+    def test_warmup_skips_tts_when_voice_replies_never(self):
+        tts = MagicMock(backend_id="kokoro")
+        ch = DiscordChannel(
+            bot_token="t", transcriber=FakeTranscriber(), tts=tts, voice_replies="never"
+        )
+        ch.warm_voice_models()
+        tts.synthesize.assert_not_called()
+
+    def test_warmup_starts_once_and_can_be_disabled(self):
+        ch = DiscordChannel(bot_token="t")
+        with patch("threading.Thread") as thread_cls:
+            ch._start_voice_warmup()
+            ch._start_voice_warmup()
+        assert thread_cls.call_count == 1
+        thread_cls.return_value.start.assert_called_once_with()
+
+        off = DiscordChannel(bot_token="t", preload_voice_models=False)
+        with patch("threading.Thread") as thread_cls:
+            off._start_voice_warmup()
+        thread_cls.assert_not_called()
+
+
 class TestVoiceRoundTripThroughSystem:
     """Voice note in → JarvisSystem.wire_channel → voice message out."""
 
@@ -797,6 +846,8 @@ class TestConfigWiring:
             "dm_only = true\n"
             'voice_replies = "always"\n'
             "max_voice_seconds = 90\n"
+            "voice_speed = 1.25\n"
+            "preload_voice_models = false\n"
         )
         cfg = load_config(cfg_file)
         kwargs = build_channel_kwargs(cfg.channel, "discord")
@@ -804,6 +855,8 @@ class TestConfigWiring:
         assert kwargs["dm_only"] is True
         assert kwargs["voice_replies"] == "always"
         assert kwargs["max_voice_seconds"] == 90
+        assert kwargs["voice_speed"] == 1.25
+        assert kwargs["preload_voice_models"] is False
         assert "bot_token" not in kwargs  # token stays in the environment
         ch = DiscordChannel(**kwargs)
         assert ch.owner_id == OWNER and ch._max_voice_seconds == 90
@@ -816,6 +869,8 @@ class TestConfigWiring:
         assert cfg.voice_replies == "mirror"
         assert cfg.max_voice_seconds == 120
         assert cfg.stt_model == "small"
+        assert cfg.voice_speed == 1.2
+        assert cfg.preload_voice_models is True
 
 
 # ---------------------------------------------------------------------------
