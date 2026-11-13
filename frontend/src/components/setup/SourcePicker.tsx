@@ -48,7 +48,7 @@ function CategorySection({
 }) {
   return (
     <div className="mb-6">
-      <h3 className="text-xs font-semibold uppercase tracking-wider mb-3"
+      <h3 className="text-xs font-semibold mb-3"
         style={{ color: 'var(--color-text-tertiary)' }}>
         {label}
       </h3>

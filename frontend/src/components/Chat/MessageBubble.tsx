@@ -7,7 +7,7 @@ import remarkMath from 'remark-math';
 import 'katex/dist/katex.min.css';
 import { Copy, Check } from 'lucide-react';
 import { AudioPlayer } from './AudioPlayer';
-import { ToolCallCard } from './ToolCallCard';
+import { ToolCallList } from './ToolCallCard';
 import { ResearchTimeline } from './ResearchTimeline';
 import { rehypeCitations } from '../../lib/rehype-citations';
 import { XRayFooter } from './XRayFooter';
@@ -50,13 +50,13 @@ function CodeBlockPre({ children, ...props }: any) {
   return (
     <div
       className="code-block-wrapper relative my-3"
-      style={{ borderRadius: 'var(--radius-md)', overflow: 'hidden' }}
+      style={{ borderRadius: 'var(--radius-lg)', overflow: 'hidden', border: '1px solid var(--color-border)' }}
     >
       <div
         className="flex items-center justify-between px-4 py-1.5 text-xs"
-        style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text-tertiary)' }}
+        style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text-tertiary)', borderBottom: '1px solid var(--color-border)' }}
       >
-        <span className="font-mono">{lang || 'code'}</span>
+        <span>{lang || 'code'}</span>
         <button
           onClick={handleCopy}
           className="flex items-center gap-1 px-2 py-0.5 rounded transition-colors cursor-pointer"
@@ -119,13 +119,14 @@ export function MessageBubble({ message, isLive = false }: Props) {
 
   if (isUser) {
     return (
-      <div className="flex justify-end mb-4">
+      <div className="flex justify-end mb-8">
         <div
-          className="max-w-[85%] px-4 py-2.5 text-sm leading-relaxed"
+          className="max-w-[85%] px-4 py-3 text-[14.5px] leading-relaxed"
           style={{
             background: 'var(--color-user-bubble)',
             color: 'var(--color-user-bubble-text)',
-            borderRadius: 'var(--radius-xl) var(--radius-xl) var(--radius-sm) var(--radius-xl)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-xl)',
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-word',
           }}
@@ -137,7 +138,17 @@ export function MessageBubble({ message, isLive = false }: Props) {
   }
 
   return (
-    <div className="group mb-6">
+    <div className="group mb-10">
+      {isLive && (
+        <div className="flex items-center gap-2.5 mb-3 text-[13px]" style={{ color: 'var(--color-text-secondary)' }}>
+          <span className="w-1 h-1" style={{ background: 'var(--color-accent)' }} aria-hidden="true" />
+          Seneca
+          <span className="sn-pill" style={{ height: 22, color: 'var(--color-text)', borderColor: 'var(--color-accent-line)' }}>
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--color-accent)' }} />
+            Generating
+          </span>
+        </div>
+      )}
       {/* Deep Research timeline (steps + status) */}
       {(message.isResearch || (message.researchTraces && message.researchTraces.length > 0)) && (
         <ResearchTimeline
@@ -149,10 +160,8 @@ export function MessageBubble({ message, isLive = false }: Props) {
 
       {/* Tool calls */}
       {message.toolCalls && message.toolCalls.length > 0 && (
-        <div className="mb-3 flex flex-col gap-2">
-          {message.toolCalls.map((tc) => (
-            <ToolCallCard key={tc.id} toolCall={tc} />
-          ))}
+        <div className="mb-4">
+          <ToolCallList toolCalls={message.toolCalls} />
         </div>
       )}
 

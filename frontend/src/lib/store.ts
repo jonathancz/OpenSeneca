@@ -91,10 +91,9 @@ function saveConversations(store: ConversationStore): void {
   localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(store));
 }
 
-export type ThemeMode = 'light' | 'dark' | 'system';
-
+// Seneca is dark only: there is no theme setting. Older saved settings may
+// still carry a `theme` key; loadSettings drops it.
 interface Settings {
-  theme: ThemeMode;
   apiUrl: string;
   // Local server API key (OPENJARVIS_API_KEY). Sent as a Bearer token on
   // /v1 + /api requests so a key-protected `jarvis serve` doesn't 401 the
@@ -112,7 +111,6 @@ interface Settings {
 
 function loadSettings(): Settings {
   const defaults: Settings = {
-    theme: 'system',
     apiUrl: '',
     apiKey: '',
     fontSize: 'default',
@@ -127,7 +125,9 @@ function loadSettings(): Settings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return defaults;
-    return { ...defaults, ...JSON.parse(raw) };
+    const saved = JSON.parse(raw);
+    if (saved && typeof saved === 'object') delete saved.theme;
+    return { ...defaults, ...saved };
   } catch {
     return defaults;
   }

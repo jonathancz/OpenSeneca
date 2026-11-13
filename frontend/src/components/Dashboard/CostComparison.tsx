@@ -1,101 +1,86 @@
-import { DollarSign, TrendingDown, Cloud, HardDrive } from 'lucide-react';
+import { Cloud } from 'lucide-react';
 import { useAppStore } from '../../lib/store';
+import { SectionHead } from '../ui/seneca';
 
-const CLOUD_PRICING = [
+export const CLOUD_PRICING = [
   { name: 'GPT-5.6 Sol', input: 5.00, output: 30.00 },
   { name: 'Claude Fable 5', input: 10.00, output: 50.00 },
   { name: 'Gemini 3.1 Pro', input: 2.00, output: 12.00 },
 ];
+
+function Money({ value }: { value: number }) {
+  const text = value.toFixed(4);
+  return (
+    <span className="tabular-nums">
+      ${text.slice(0, -2)}
+      <span style={{ color: 'var(--color-text-tertiary)' }}>{text.slice(-2)}</span>
+    </span>
+  );
+}
 
 export function CostComparison() {
   const savings = useAppStore((s) => s.savings);
 
   if (!savings || savings.total_tokens === 0) {
     return (
-      <div className="hud-panel p-6">
-        <h3 className="hud-label flex items-center gap-2 mb-4">
-          <DollarSign size={12} style={{ color: 'var(--color-success)' }} />
-          Cost Comparison
-        </h3>
-        <div className="h-48 flex items-center justify-center text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
-          <span className="hud-mono">awaiting first inference…</span>
+      <section className="sn-card p-6">
+        <SectionHead index="00.2" title="Cost comparison" right="estimate" />
+        <div className="h-48 flex items-center justify-center text-[13px]" style={{ color: 'var(--color-text-tertiary)' }}>
+          Waiting for the first reply…
         </div>
-      </div>
+      </section>
     );
   }
 
   const promptK = savings.total_prompt_tokens / 1000;
   const completionK = savings.total_completion_tokens / 1000;
+  const rows = CLOUD_PRICING.map((provider) => {
+    const cost = (promptK * provider.input / 1000) + (completionK * provider.output / 1000);
+    return { ...provider, cost, saved: cost - savings.local_cost };
+  });
+  const maxCost = Math.max(...rows.map((r) => r.cost), 0.0001);
+  const top = Math.max(...rows.map((r) => r.cost));
 
   return (
-    <div className="hud-panel p-6">
-      <h3 className="hud-label flex items-center gap-2 mb-4">
-        <DollarSign size={12} style={{ color: 'var(--color-success)' }} />
-        Cost Comparison*
-      </h3>
+    <section className="sn-card p-6 flex flex-col">
+      <SectionHead index="00.2" title="Cost comparison" right="estimate*" />
 
-      {/* Local stats */}
-      <div
-        className="flex items-center gap-3 p-3 rounded-lg mb-3"
-        style={{ background: 'var(--color-accent-subtle)', border: '1px solid var(--color-accent)' }}
-      >
-        <HardDrive size={18} style={{ color: 'var(--color-accent)' }} />
-        <div className="flex-1">
-          <div className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
-            Local (your hardware)
-          </div>
-          <div className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
-            {savings.total_calls} requests &middot; {savings.total_tokens.toLocaleString()} tokens
-          </div>
-        </div>
-        <div className="text-right">
-          <div className="text-lg font-semibold" style={{ color: 'var(--color-success)' }}>
-            ${savings.local_cost.toFixed(4)}
-          </div>
-          <div className="text-[10px]" style={{ color: 'var(--color-text-tertiary)' }}>
-            electricity only
-          </div>
+      {/* Local */}
+      <div className="pt-6 pb-6" style={{ borderBottom: '1px dashed var(--color-rule)' }}>
+        <div className="hud-label mb-3">Local, your hardware</div>
+        <span className="sn-figure" style={{ fontSize: 56 }}>
+          ${savings.local_cost.toFixed(4).slice(0, -2)}
+          <span className="sn-dec">{savings.local_cost.toFixed(4).slice(-2)}</span>
+        </span>
+        <div className="text-xs mt-3" style={{ color: 'var(--color-text-tertiary)' }}>
+          electricity only · {savings.total_calls} requests · {savings.total_tokens.toLocaleString()} tokens
         </div>
       </div>
 
       {/* Cloud comparisons */}
-      <div className="flex flex-col gap-2">
-        {CLOUD_PRICING.map((provider) => {
-          const cost = (promptK * provider.input / 1000) + (completionK * provider.output / 1000);
-          const saved = cost - savings.local_cost;
-          return (
-            <div
-              key={provider.name}
-              className="flex items-center gap-3 p-3 rounded-lg"
-              style={{ background: 'var(--color-bg-secondary)' }}
-            >
-              <Cloud size={16} style={{ color: 'var(--color-text-tertiary)' }} />
-              <div className="flex-1">
-                <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-                  {provider.name}
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-sm font-mono" style={{ color: 'var(--color-text)' }}>
-                  ${cost.toFixed(4)}
-                </div>
-                {saved > 0 && (
-                  <div className="text-[10px] flex items-center gap-0.5 justify-end" style={{ color: 'var(--color-success)' }}>
-                    <TrendingDown size={10} />
-                    ${saved.toFixed(4)} saved
-                  </div>
-                )}
-              </div>
+      <div className="flex flex-col gap-5 pt-6">
+        {rows.map((r) => (
+          <div key={r.name}>
+            <div className="flex items-center gap-2.5 mb-2 text-[13px]">
+              <Cloud size={13} strokeWidth={1.5} style={{ color: 'var(--color-text-tertiary)' }} />
+              <span className="flex-1" style={{ color: 'var(--color-text-secondary)' }}>{r.name}</span>
+              <span style={{ color: 'var(--color-text)' }}><Money value={r.cost} /></span>
             </div>
-          );
-        })}
+            <div className="sn-bar">
+              <i style={{ width: `${(r.cost / maxCost) * 100}%`, background: r.cost === top ? 'var(--color-text)' : 'var(--color-text-tertiary)' }} />
+            </div>
+            {r.saved > 0 && (
+              <div className="text-[11.5px] mt-1.5 tabular-nums" style={{ color: 'var(--color-success)' }}>
+                ${r.saved.toFixed(4)} <span style={{ color: 'var(--color-text-tertiary)' }}>saved</span>
+              </div>
+            )}
+          </div>
+        ))}
       </div>
 
-      <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--color-border)' }}>
-        <p className="text-[10px] leading-relaxed" style={{ color: 'var(--color-text-tertiary)' }}>
-          *Savings estimates assume local models (e.g. Qwen, Nemotron, Kimi) produce roughly the same number of tokens per request, on average, as closed-source cloud models.
-        </p>
-      </div>
-    </div>
+      <p className="text-[11.5px] leading-relaxed mt-auto pt-6" style={{ color: 'var(--color-text-tertiary)' }}>
+        *Savings estimates assume local models (e.g. Qwen, Nemotron, Kimi) produce roughly the same number of tokens per request, on average, as closed-source cloud models.
+      </p>
+    </section>
   );
 }

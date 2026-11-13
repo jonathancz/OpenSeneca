@@ -82,7 +82,7 @@ function TimelineStep({
       />
 
       <div
-        className="text-[10px] uppercase tracking-[0.08em] mb-0.5"
+        className="text-[10px] mb-0.5"
         style={{
           color: active ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
         }}

@@ -30,6 +30,9 @@ os.environ["OPENJARVIS_HOME"] = str(_TEST_HOME)
 # at a developer's real file even when OPENJARVIS_HOME is isolated, so remove
 # it before config.py and its import-time constants are initialized.
 os.environ.pop("OPENJARVIS_CONFIG", None)
+# Tests must never reach the live Unsplash API (hero imagery); the hero tests
+# inject a mocked HTTP client instead.
+os.environ.pop("UNSPLASH_ACCESS_KEY", None)
 
 from openjarvis.core.config import GpuInfo, HardwareInfo, load_config  # noqa: E402
 from openjarvis.core.events import EventBus, reset_event_bus  # noqa: E402

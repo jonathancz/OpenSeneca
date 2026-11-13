@@ -8,9 +8,10 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { Zap, Activity, Thermometer, Hash, Gauge } from 'lucide-react';
 import { fetchEnergy, fetchTelemetry } from '../../lib/api';
 import { useAppStore } from '../../lib/store';
+import { Figure } from '../ui/seneca';
+import { HeroBackdrop, PhotoCredit } from '../HeroPhoto';
 
 interface EnergySample {
   timestamp: string;
@@ -18,14 +19,16 @@ interface EnergySample {
   energy_j: number;
 }
 
-interface EnergyData {
+export interface EnergyData {
   total_energy_j?: number;
   energy_per_token_j?: number;
   avg_power_w?: number;
+  cpu_temp_c?: number | null;
+  gpu_temp_c?: number | null;
   samples?: EnergySample[];
 }
 
-interface TelemetryStats {
+export interface TelemetryStats {
   total_requests?: number;
   total_tokens?: number;
 }
@@ -35,37 +38,8 @@ interface ChartPoint {
   power: number;
 }
 
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  unit,
-}: {
-  icon: typeof Zap;
-  label: string;
-  value: string;
-  unit?: string;
-}) {
-  return (
-    <div className="hud-panel p-4">
-      <div className="flex items-center gap-2 mb-2">
-        <Icon size={12} style={{ color: 'var(--color-accent)' }} />
-        <span className="hud-label">{label}</span>
-      </div>
-      <div className="hud-mono text-2xl font-semibold truncate" style={{ color: 'var(--color-text)' }}>
-        {value}
-        {unit && (
-          <span className="hud-label ml-1" style={{ fontSize: '0.625rem', letterSpacing: '0.18em' }}>
-            {unit}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-export function EnergyDashboard() {
-  const savings = useAppStore((s) => s.savings);
+/** Energy and telemetry, polled every 5 s (one poller for the whole dashboard). */
+export function useEnergyData() {
   const [energy, setEnergy] = useState<EnergyData | null>(null);
   const [telemetry, setTelemetry] = useState<TelemetryStats | null>(null);
   const [chartData, setChartData] = useState<ChartPoint[]>([]);
@@ -84,7 +58,7 @@ export function EnergyDashboard() {
         if (data.samples) {
           setChartData(
             data.samples.map((s) => ({
-              time: new Date(s.timestamp).toLocaleTimeString(),
+              time: new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
               power: Math.round(s.power_w * 10) / 10,
             })),
           );
@@ -105,97 +79,164 @@ export function EnergyDashboard() {
     return () => clearInterval(interval);
   }, [fetchData]);
 
-  const thermalStatus = (energy?.avg_power_w ?? 0) < 50
-    ? { label: 'Cool', color: 'var(--color-success)' }
-    : (energy?.avg_power_w ?? 0) < 150
-    ? { label: 'Warm', color: 'var(--color-warning)' }
-    : { label: 'Hot', color: 'var(--color-error)' };
+  return { energy, telemetry, chartData, error };
+}
 
-  if (error || !energy) {
-    return (
-      <div className="hud-panel p-6">
-        <h3 className="hud-label flex items-center gap-2 mb-4">
-          <Zap size={12} style={{ color: 'var(--color-accent)' }} />
-          Energy Monitoring
-        </h3>
-        <div className="h-48 flex items-center justify-center text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
-          <span className="hud-mono">{error || 'awaiting telemetry stream…'}</span>
-        </div>
-      </div>
-    );
-  }
+export function thermalStatus(energy: EnergyData | null) {
+  const w = energy?.avg_power_w ?? 0;
+  return w < 50 ? 'Cool' : w < 150 ? 'Warm' : 'Hot';
+}
+
+export function formatNumber(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+  return String(n);
+}
+
+function splitUnit(n: number): [string, string] {
+  if (n >= 1_000_000) return [(n / 1_000_000).toFixed(1), 'M'];
+  if (n >= 1_000) return [(n / 1_000).toFixed(1), 'K'];
+  return [String(n), ''];
+}
+
+/** The four open figures under the headline. */
+export function EnergyStats({ energy, telemetry }: { energy: EnergyData | null; telemetry: TelemetryStats | null }) {
+  const savings = useAppStore((s) => s.savings);
+  const requests = savings?.total_calls ?? telemetry?.total_requests ?? 0;
+  const tokens = savings?.total_tokens ?? telemetry?.total_tokens ?? 0;
+  const [tokValue, tokUnit] = splitUnit(tokens);
+  const temps = [
+    energy?.cpu_temp_c != null ? `CPU ${Math.round(energy.cpu_temp_c)} °C` : null,
+    energy?.gpu_temp_c != null ? `GPU ${Math.round(energy.gpu_temp_c)} °C` : null,
+  ].filter(Boolean).join(' · ');
+
+  const stats = [
+    { label: 'Avg power', value: (energy?.avg_power_w ?? 0).toFixed(1), unit: 'W', sub: 'across recent samples' },
+    { label: 'Total requests', value: String(requests), sub: 'since the server started' },
+    {
+      label: 'Tokens processed',
+      value: tokValue,
+      unit: tokUnit,
+      sub: savings
+        ? `${formatNumber(savings.total_prompt_tokens)} prompt · ${formatNumber(savings.total_completion_tokens)} output`
+        : 'prompt and output',
+    },
+    { label: 'Thermal', value: thermalStatus(energy), sub: temps || 'from average power draw' },
+  ];
 
   return (
-    <div className="hud-panel p-6">
-      <h3 className="hud-label flex items-center gap-2 mb-4">
-        <Zap size={12} style={{ color: 'var(--color-accent)' }} />
-        Energy Monitoring
-      </h3>
-
-      <div className="grid grid-cols-2 gap-3 mb-4">
-        <StatCard
-          icon={Zap}
-          label="Total Energy"
-          value={((energy.total_energy_j ?? 0) / 1000).toFixed(1)}
-          unit="kJ"
-        />
-        <StatCard
-          icon={Activity}
-          label="Energy / Token"
-          value={(energy.energy_per_token_j ?? 0).toFixed(3)}
-          unit="J"
-        />
-        <StatCard
-          icon={Thermometer}
-          label="Avg Power"
-          value={(energy.avg_power_w ?? 0).toFixed(1)}
-          unit="W"
-        />
-        <StatCard
-          icon={Hash}
-          label="Total Requests"
-          value={String(savings?.total_calls ?? telemetry?.total_requests ?? 0)}
-        />
-        <StatCard
-          icon={Gauge}
-          label="Thermal"
-          value={thermalStatus.label}
-        />
-        <StatCard
-          icon={Hash}
-          label="Tokens Processed"
-          value={formatNumber(savings?.total_tokens ?? telemetry?.total_tokens ?? 0)}
-        />
-      </div>
-
-      {/* Chart */}
-      {chartData.length > 1 && (
-        <div className="h-48">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-              <XAxis dataKey="time" tick={{ fontSize: 10, fill: 'var(--color-text-tertiary)' }} />
-              <YAxis tick={{ fontSize: 10, fill: 'var(--color-text-tertiary)' }} unit="W" />
-              <Tooltip
-                contentStyle={{
-                  background: 'var(--color-surface)',
-                  border: '1px solid var(--color-border)',
-                  borderRadius: 'var(--radius-md)',
-                  fontSize: 12,
-                  color: 'var(--color-text)',
-                }}
-              />
-              <Line type="monotone" dataKey="power" stroke="var(--color-accent)" strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-8 pt-7" style={{ borderTop: '1px dashed var(--color-rule)' }}>
+      {stats.map((s) => (
+        <div key={s.label} className="min-w-0">
+          <div className="hud-label mb-3">{s.label}</div>
+          <Figure value={s.value} unit={s.unit} size={52} />
+          <div className="text-xs mt-3 truncate" style={{ color: 'var(--color-text-tertiary)' }}>{s.sub}</div>
         </div>
-      )}
+      ))}
     </div>
   );
 }
 
-function formatNumber(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
-  return String(n);
+/**
+ * The dashboard hero: the rotating photo, darkened, with frosted glass
+ * readouts for energy and the power chart. Carries the one HUD notch.
+ */
+export function EnergyHero({
+  energy,
+  chartData,
+  error,
+}: {
+  energy: EnergyData | null;
+  chartData: ChartPoint[];
+  error: string | null;
+}) {
+  const totalKJ = ((energy?.total_energy_j ?? 0) / 1000).toFixed(1);
+  const avgW = (energy?.avg_power_w ?? 0).toFixed(1);
+
+  return (
+    <section
+      className="sn-notch relative overflow-hidden min-h-[460px] flex flex-col justify-between p-6 md:p-7"
+      style={{ border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)' }}
+      aria-label="Energy monitoring"
+    >
+      <HeroBackdrop position="center 40%" />
+
+      <div className="relative sn-glass p-6 max-w-[320px]">
+        <div className="flex items-center gap-2.5 text-[13.5px]" style={{ color: 'var(--color-text)' }}>
+          <span className="w-1 h-1" style={{ background: 'var(--color-accent)' }} aria-hidden="true" />
+          Energy monitoring
+        </div>
+        {error || !energy ? (
+          <div className="text-[13px] mt-6" style={{ color: 'var(--color-text-secondary)' }}>
+            {error || 'Waiting for telemetry…'}
+          </div>
+        ) : (
+          <>
+            <div className="mt-5">
+              <Figure value={totalKJ} unit="kJ" size={84} />
+            </div>
+            <div className="text-[13px] mt-4" style={{ color: 'var(--color-text-secondary)' }}>
+              <span style={{ color: 'var(--color-text)' }}>{(energy.energy_per_token_j ?? 0).toFixed(3)} J</span> per token, total energy since start
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="relative flex flex-col gap-3 mt-8">
+        {chartData.length > 1 && (
+          <div className="sn-glass px-5 pt-4 pb-3 max-w-[520px]">
+            <div className="flex items-baseline justify-between mb-2">
+              <span className="flex items-baseline gap-3 text-[13.5px]" style={{ color: 'var(--color-text)' }}>
+                Power draw
+                <Figure value={avgW} unit="W" size={30} />
+              </span>
+              <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>recent samples</span>
+            </div>
+            <div className="h-36">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData} margin={{ top: 6, right: 4, bottom: 0, left: -18 }}>
+                  <CartesianGrid strokeDasharray="4 5" stroke="rgba(255,255,255,0.10)" vertical={false} />
+                  <XAxis
+                    dataKey="time"
+                    tick={{ fontSize: 11, fill: 'var(--color-text-tertiary)' }}
+                    axisLine={false}
+                    tickLine={false}
+                    minTickGap={24}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11, fill: 'var(--color-text-tertiary)' }}
+                    axisLine={false}
+                    tickLine={false}
+                    unit=" W"
+                    width={48}
+                  />
+                  <Tooltip
+                    cursor={{ stroke: 'var(--color-accent)', strokeDasharray: '3 3' }}
+                    contentStyle={{
+                      background: 'var(--color-bg-tertiary)',
+                      border: '1px solid var(--color-border-strong)',
+                      borderRadius: 10,
+                      fontSize: 12,
+                      color: 'var(--color-text)',
+                    }}
+                    labelStyle={{ color: 'var(--color-text-tertiary)' }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="power"
+                    stroke="var(--color-text)"
+                    strokeWidth={1.25}
+                    dot={false}
+                    activeDot={{ r: 3, fill: 'var(--color-accent)', stroke: 'none' }}
+                    isAnimationActive={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+        <PhotoCredit className="self-end" />
+      </div>
+    </section>
+  );
 }

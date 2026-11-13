@@ -11,6 +11,7 @@ import {
   resolveChatEngine,
 } from '../../lib/chat-telemetry';
 import { MicButton } from './MicButton';
+import { modKey } from '../HintBar';
 import { useSpeech } from '../../hooks/useSpeech';
 import type {
   ChatMessage,
@@ -171,11 +172,23 @@ export function InputArea() {
     resetStream();
   }, [resetStream]);
 
+  // Esc stops the reply that is streaming in this chat (shown in the hint bar).
+  useEffect(() => {
+    if (!isCurrentChatStreaming) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (useAppStore.getState().commandPaletteOpen) return;
+      stopStreaming();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isCurrentChatStreaming, stopStreaming]);
+
   const sendMessage = useCallback(async () => {
     const content = input.trim();
     if (!content || streamState.isStreaming) return;
     if (!selectedModel) {
-      toast.error('Pick a model first (⌘K)');
+      toast.error(`Pick a model first (${modKey('K')})`);
       return;
     }
 
@@ -562,24 +575,28 @@ export function InputArea() {
   };
 
   return (
-    <div className="px-4 pb-4 pt-2" style={{ maxWidth: 'var(--chat-max-width)', margin: '0 auto', width: '100%' }}>
-      <div className="mb-2 flex flex-col gap-1">
+    <div className="px-6 pb-6 pt-3" style={{ maxWidth: 'calc(var(--chat-max-width) + 48px)', margin: '0 auto', width: '100%' }}>
+      <div className="mb-3 flex flex-col gap-1.5">
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => setDeepResearch(!deepResearch)}
             disabled={streamState.isStreaming}
             aria-pressed={deepResearch}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs transition-colors cursor-pointer disabled:cursor-default disabled:opacity-50"
+            className="inline-flex items-center gap-2 h-[30px] px-3.5 rounded-full text-[12.5px] transition-colors cursor-pointer disabled:cursor-default disabled:opacity-50"
             style={{
-              background: deepResearch ? 'var(--color-accent-subtle)' : 'transparent',
-              border: `1px solid ${deepResearch ? 'var(--color-accent)' : 'var(--color-border)'}`,
-              color: deepResearch ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
+              background: deepResearch ? 'var(--color-bg-hover)' : 'transparent',
+              border: `1px solid ${deepResearch ? 'var(--color-accent-line)' : 'var(--color-input-border)'}`,
+              color: deepResearch ? 'var(--color-text)' : 'var(--color-text-secondary)',
             }}
-            title={deepResearch ? 'Deep Research: on' : 'Deep Research: off'}
+            title={deepResearch ? 'Deep research: on' : 'Deep research: off'}
           >
-            <Search size={12} />
-            Deep Research
+            {deepResearch ? (
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--color-accent)' }} />
+            ) : (
+              <Search size={12} strokeWidth={1.75} />
+            )}
+            Deep research
           </button>
         </div>
         {deepResearch && corpusSync.syncing && corpusSync.itemsSynced > 0 && (
@@ -591,16 +608,16 @@ export function InputArea() {
             <span key={corpusSync.itemsSynced} className="sync-bump" style={{ color: 'var(--color-text-secondary)' }}>
               {corpusSync.itemsSynced.toLocaleString()}
             </span>{' '}
-            items — sync in progress, results will improve as more data is indexed.
+            items. Sync is in progress, so results improve as more data is indexed.
           </div>
         )}
       </div>
       <div
-        className="flex items-center gap-2 rounded-2xl px-4 py-3 transition-shadow"
+        className="sn-composer flex items-center gap-3 pl-5 pr-2.5 py-2.5"
         style={{
-          background: 'var(--color-input-bg)',
+          background: 'var(--card-surface)',
           border: '1px solid var(--color-input-border)',
-          boxShadow: 'var(--shadow-sm)',
+          borderRadius: 'var(--radius-xl)',
         }}
       >
         <textarea
@@ -608,20 +625,28 @@ export function InputArea() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={selectedModel ? 'Message OpenJarvis...' : 'Pick a model first (⌘K)...'}
+          placeholder={
+            isCurrentChatStreaming
+              ? 'Generating, press Esc to stop'
+              : selectedModel
+                ? 'Message Seneca'
+                : `Pick a model first (${modKey('K')})`
+          }
           rows={1}
-          className="flex-1 bg-transparent outline-none resize-none text-sm leading-relaxed"
+          className="flex-1 bg-transparent outline-none resize-none text-[15px] leading-relaxed py-2 placeholder:text-[var(--color-text-tertiary)]"
           style={{ color: 'var(--color-text)', maxHeight: '200px' }}
           disabled={streamState.isStreaming || modelLoading}
         />
         {isCurrentChatStreaming ? (
           <button
             onClick={stopStreaming}
-            className="p-2 rounded-xl transition-colors shrink-0 cursor-pointer"
-            style={{ background: 'var(--color-error)', color: 'var(--color-on-accent)' }}
-            title="Stop generating"
+            className="flex items-center gap-2 h-10 pl-3.5 pr-2 rounded-[10px] transition-colors shrink-0 cursor-pointer text-[13px]"
+            style={{ border: '1px solid color-mix(in srgb, var(--color-error) 45%, transparent)', color: 'var(--color-error)', background: 'transparent' }}
+            title="Stop generating (Esc)"
           >
-            <Square size={16} />
+            <Square size={11} strokeWidth={2} />
+            Stop
+            <kbd className="sn-kbd">Esc</kbd>
           </button>
         ) : (
           <div className="flex items-center gap-1">
@@ -634,23 +659,23 @@ export function InputArea() {
             <button
               onClick={sendMessage}
               disabled={streamState.isStreaming || !input.trim() || modelLoading || !selectedModel}
-              title={selectedModel ? 'Send message' : 'Pick a model first (⌘K)'}
-              className="p-2 rounded-xl transition-colors shrink-0 cursor-pointer disabled:opacity-30 disabled:cursor-default"
+              title={selectedModel ? 'Send message (Enter)' : `Pick a model first (${modKey('K')})`}
+              className="flex items-center gap-2 h-10 px-4 rounded-[10px] transition-colors shrink-0 cursor-pointer disabled:cursor-default text-[13px] font-medium"
               style={{
                 background: input.trim() ? 'var(--color-accent)' : 'var(--color-bg-tertiary)',
-                color: input.trim() ? 'white' : 'var(--color-text-tertiary)',
+                color: input.trim() ? 'var(--color-on-accent)' : 'var(--color-text-tertiary)',
+                border: input.trim() ? '1px solid transparent' : '1px solid var(--color-border)',
               }}
             >
-              <Send size={16} />
+              <Send size={14} strokeWidth={1.75} />
+              Send
             </button>
           </div>
         )}
       </div>
-      <div className="flex items-center justify-center mt-2 text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
-        <span>
-          <kbd className="font-mono">Enter</kbd> to send &middot;{' '}
-          <kbd className="font-mono">Shift+Enter</kbd> for new line
-        </span>
+      {/* The footer hint bar teaches these on wider screens. */}
+      <div className="flex md:hidden items-center justify-center mt-2 text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
+        <span>Enter to send · Shift Enter for a new line</span>
       </div>
     </div>
   );

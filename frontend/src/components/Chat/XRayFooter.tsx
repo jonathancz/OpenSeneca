@@ -9,7 +9,7 @@ interface Props {
 }
 
 function formatMs(ms: number): string {
-  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
+  return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`;
 }
 
 export function XRayFooter({ usage, telemetry, isResearch = false }: Props) {
@@ -20,7 +20,7 @@ export function XRayFooter({ usage, telemetry, isResearch = false }: Props) {
   // produced the answer) and label the response with the mode instead.
   const parts: string[] = [];
   if (isResearch) {
-    parts.push('Deep Research');
+    parts.push('Deep research');
   } else {
     if (telemetry?.engine) parts.push(telemetry.engine);
     if (telemetry?.model_id) parts.push(telemetry.model_id);
@@ -35,12 +35,12 @@ export function XRayFooter({ usage, telemetry, isResearch = false }: Props) {
   if (parts.length === 0 && !usage?.total_tokens) return null;
 
   // Fallback: just show total tokens if no telemetry
-  const summary = parts.length > 0 ? parts.join(' - ') : `${usage!.total_tokens} tokens`;
+  const summary = parts.length > 0 ? parts : [`${usage!.total_tokens} tokens`];
 
   // Build expanded rows
   const rows: Array<{ label: string; value: string; color?: string }> = [];
   if (isResearch) {
-    rows.push({ label: 'Mode', value: 'Deep Research' });
+    rows.push({ label: 'Mode', value: 'Deep research' });
   } else if (telemetry?.engine) {
     const modelDetail = telemetry.model_id || '';
     rows.push({ label: 'Engine', value: `${telemetry.engine}${modelDetail ? ` (${modelDetail})` : ''}` });
@@ -80,45 +80,48 @@ export function XRayFooter({ usage, telemetry, isResearch = false }: Props) {
   }
 
   return (
-    <div style={{ borderTop: '1px solid var(--color-border-subtle)', marginTop: '0.375rem' }}>
-      {/* Collapsed row */}
+    <div className="mt-3" style={{ borderTop: '1px dashed var(--color-rule)' }}>
+      {/* Collapsed run readout */}
       <button
         onClick={() => rows.length > 0 && setExpanded(!expanded)}
-        className="flex items-center gap-2 w-full text-left py-1"
+        className="flex items-center gap-2 w-full text-left pt-3 pb-1"
         style={{ cursor: rows.length > 0 ? 'pointer' : 'default' }}
+        aria-expanded={rows.length > 0 ? expanded : undefined}
       >
         <span
-          className="w-1 h-1 rounded-full shrink-0"
-          style={{ background: 'var(--color-accent)' }}
+          className="w-1 h-1 shrink-0"
+          style={{ background: 'var(--color-text-tertiary)' }}
         />
-        <span
-          className="text-[11px] flex-1"
-          style={{ color: 'var(--color-text-tertiary)', fontFamily: 'system-ui' }}
-        >
-          {summary}
+        <span className="text-xs flex-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 tabular-nums" style={{ color: 'var(--color-text-tertiary)' }}>
+          {summary.map((part, i) => (
+            <span key={i} className="flex items-center gap-2">
+              {i > 0 && <span aria-hidden="true">·</span>}
+              {part}
+            </span>
+          ))}
         </span>
         {rows.length > 0 && (
           expanded
-            ? <ChevronUp size={10} style={{ color: 'var(--color-text-tertiary)' }} />
-            : <ChevronDown size={10} style={{ color: 'var(--color-text-tertiary)' }} />
+            ? <ChevronUp size={12} style={{ color: 'var(--color-text-tertiary)' }} />
+            : <ChevronDown size={12} style={{ color: 'var(--color-text-tertiary)' }} />
         )}
       </button>
 
       {/* Expanded trace */}
       {expanded && rows.length > 0 && (
         <div
-          className="rounded-lg mt-1 px-3 py-2"
-          style={{ background: 'rgba(0, 0, 0, 0.15)' }}
+          className="sn-card mt-2 px-4 py-3"
+          style={{ borderRadius: 'var(--radius-lg)' }}
         >
-          <div className="grid gap-y-0.5" style={{ gridTemplateColumns: 'auto 1fr', columnGap: '1rem' }}>
+          <div className="grid gap-y-1.5" style={{ gridTemplateColumns: 'auto 1fr', columnGap: '1.25rem' }}>
             {rows.map((row) => (
               <div key={row.label} className="contents">
-                <span className="text-[11px]" style={{ color: 'var(--color-text-tertiary)', fontFamily: 'monospace' }}>
+                <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
                   {row.label}
                 </span>
                 <span
-                  className="text-[11px]"
-                  style={{ color: row.color || 'var(--color-text-secondary)', fontFamily: 'monospace' }}
+                  className="text-xs tabular-nums"
+                  style={{ color: row.color || 'var(--color-text)' }}
                 >
                   {row.value}
                 </span>

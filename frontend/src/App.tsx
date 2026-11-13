@@ -35,7 +35,6 @@ export default function App() {
   const selectedModel = useAppStore((s) => s.selectedModel);
   const setServerInfo = useAppStore((s) => s.setServerInfo);
   const setSavings = useAppStore((s) => s.setSavings);
-  const settings = useAppStore((s) => s.settings);
   const commandPaletteOpen = useAppStore((s) => s.commandPaletteOpen);
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen);
   const optInEnabled = useAppStore((s) => s.optInEnabled);
@@ -47,14 +46,6 @@ export default function App() {
   const setOptInModalOpen = useAppStore((s) => s.setOptInModalOpen);
   const markOptInModalSeen = useAppStore((s) => s.markOptInModalSeen);
   const savings = useAppStore((s) => s.savings);
-
-  // Apply theme class to <html>
-  useEffect(() => {
-    const root = document.documentElement;
-    root.classList.remove('dark', 'light');
-    if (settings.theme === 'dark') root.classList.add('dark');
-    else if (settings.theme === 'light') root.classList.add('light');
-  }, [settings.theme]);
 
   // Sync overlay conversations into the main app
   const importOverlay = useAppStore((s) => s.importOverlayConversation);

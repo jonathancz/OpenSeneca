@@ -25,11 +25,11 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'OpenJarvis',
-        short_name: 'Jarvis',
+        name: 'Seneca',
+        short_name: 'Seneca',
         description: 'On-device AI assistant',
-        theme_color: '#161618',
-        background_color: '#161618',
+        theme_color: '#0C0C0D',
+        background_color: '#0C0C0D',
         display: 'standalone',
         icons: [
           { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },

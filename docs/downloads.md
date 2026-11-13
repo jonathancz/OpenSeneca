@@ -143,7 +143,7 @@ Then open [http://localhost:5173](http://localhost:5173).
 - **Tool use** — calculator, web search, code interpreter, file I/O
 - **System panel** — live telemetry, energy monitoring, cost comparison vs. cloud models
 - **Dashboard** — energy graphs, trace debugging, cost breakdown
-- **Settings** — model selection, agent configuration, theme toggle
+- **Settings** — model selection, agent configuration, hero photo rotation (the app is dark only)
 
 ---
 

@@ -10,11 +10,12 @@ function formatRelativeTime(timestamp: number): string {
   const diff = Date.now() - timestamp;
   const minutes = Math.floor(diff / 60000);
   if (minutes < 1) return 'Just now';
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return `${minutes} min ago`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return `${hours} h ago`;
   const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days} days ago`;
   return new Date(timestamp).toLocaleDateString();
 }
 
@@ -42,68 +43,88 @@ export function ConversationList({ searchQuery }: Props) {
     );
   }
 
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const groups = [
+    { label: 'Today', items: filtered.filter((c) => c.updatedAt >= startOfToday.getTime()) },
+    { label: 'Earlier', items: filtered.filter((c) => c.updatedAt < startOfToday.getTime()) },
+  ].filter((g) => g.items.length > 0);
+
   return (
-    <div className="flex flex-col gap-0.5 py-1">
-      {filtered.map((conv) => {
-        const isActive = conv.id === activeId;
-        const isStreaming = conv.id === streamingConversationId;
-        return (
-          <div
-            key={conv.id}
-            className="group flex items-center rounded-lg cursor-pointer transition-colors"
-            style={{
-              background: isActive ? 'var(--color-bg-tertiary)' : 'transparent',
-            }}
-            onMouseEnter={(e) => {
-              if (!isActive) e.currentTarget.style.background = 'var(--color-bg-secondary)';
-            }}
-            onMouseLeave={(e) => {
-              if (!isActive) e.currentTarget.style.background = 'transparent';
-            }}
-          >
-            <button
-              onClick={() => {
-                selectConversation(conv.id);
-                navigate('/');
-              }}
-              className="flex-1 text-left px-3 py-2 min-w-0 cursor-pointer"
-            >
+    <div className="flex flex-col gap-4 pb-2">
+      {groups.map((group) => (
+        <div key={group.label} className="flex flex-col gap-0.5">
+          <div className="px-3 pb-1.5 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+            {group.label}
+          </div>
+          {group.items.map((conv) => {
+            const isActive = conv.id === activeId;
+            const isStreaming = conv.id === streamingConversationId;
+            return (
               <div
-                className="text-sm truncate"
+                key={conv.id}
+                className="group relative flex items-center rounded-lg cursor-pointer transition-colors"
                 style={{
-                  color: isActive ? 'var(--color-text)' : 'var(--color-text-secondary)',
-                  fontWeight: isActive ? 500 : 400,
+                  background: isActive ? 'var(--color-bg-tertiary)' : 'transparent',
+                }}
+                onMouseEnter={(e) => {
+                  if (!isActive) e.currentTarget.style.background = 'var(--color-bg-secondary)';
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive) e.currentTarget.style.background = 'transparent';
                 }}
               >
-                {conv.title}
+                {(isActive || isStreaming) && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute left-2.5 top-[17px] w-1 h-1"
+                    style={{ background: 'var(--color-accent)' }}
+                  />
+                )}
+                <button
+                  onClick={() => {
+                    selectConversation(conv.id);
+                    navigate('/');
+                  }}
+                  className="flex-1 text-left pl-6 pr-3 py-2.5 min-w-0 cursor-pointer"
+                >
+                  <div
+                    className="text-[13.5px] truncate"
+                    style={{
+                      color: isActive ? 'var(--color-text)' : 'var(--color-text-secondary)',
+                    }}
+                  >
+                    {conv.title}
+                  </div>
+                  <div className="text-[11.5px] mt-0.5" style={{ color: 'var(--color-text-tertiary)' }}>
+                    {formatRelativeTime(conv.updatedAt)}
+                  </div>
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteConversation(conv.id);
+                  }}
+                  disabled={isStreaming}
+                  className="p-1.5 mr-1.5 rounded-md opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity cursor-pointer disabled:cursor-not-allowed disabled:opacity-30"
+                  style={{ color: 'var(--color-text-tertiary)' }}
+                  onMouseEnter={(e) => {
+                    if (!isStreaming) e.currentTarget.style.color = 'var(--color-error)';
+                  }}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-tertiary)')}
+                  title={
+                    isStreaming
+                      ? 'Stop generating before deleting this conversation'
+                      : 'Delete conversation'
+                  }
+                >
+                  <Trash2 size={14} strokeWidth={1.5} />
+                </button>
               </div>
-              <div className="text-[11px] mt-0.5" style={{ color: 'var(--color-text-tertiary)' }}>
-                {formatRelativeTime(conv.updatedAt)}
-              </div>
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                deleteConversation(conv.id);
-              }}
-              disabled={isStreaming}
-              className="p-1.5 mr-1 rounded opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer disabled:cursor-not-allowed disabled:opacity-30"
-              style={{ color: 'var(--color-text-tertiary)' }}
-              onMouseEnter={(e) => {
-                if (!isStreaming) e.currentTarget.style.color = 'var(--color-error)';
-              }}
-              onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-tertiary)')}
-              title={
-                isStreaming
-                  ? 'Stop generating before deleting this conversation'
-                  : 'Delete conversation'
-              }
-            >
-              <Trash2 size={14} />
-            </button>
-          </div>
-        );
-      })}
+            );
+          })}
+        </div>
+      ))}
     </div>
   );
 }

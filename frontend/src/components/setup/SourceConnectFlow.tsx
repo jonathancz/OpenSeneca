@@ -231,7 +231,7 @@ function LocalPanel({
     <div className="flex flex-col gap-4">
       <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
         {displayName} reads data directly from your Mac. Make sure the app is installed and
-        Full Disk Access is granted to OpenJarvis in System Settings.
+        Full Disk Access is granted to Seneca in System Settings.
       </p>
       <div
         className="px-4 py-3 rounded-lg text-sm"
@@ -241,7 +241,7 @@ function LocalPanel({
         }}
       >
         <strong>System Settings</strong> → Privacy &amp; Security → Full Disk Access →
-        enable OpenJarvis
+        enable Seneca
       </div>
       <button
         onClick={() => onConnect({})}
@@ -334,7 +334,7 @@ function StepByStepPanel({
            connector.icon === 'Mic' ? '\uD83C\uDF99\uFE0F' :
            connector.icon === 'FolderOpen' ? '\uD83D\uDCC1' : '\uD83D\uDD17'}
         </span>
-        <span style={{ fontWeight: 600, fontSize: 15 }}>
+        <span style={{ fontWeight: 500, fontSize: 15 }}>
           {connector.display_name}
         </span>
       </div>
@@ -352,7 +352,7 @@ function StepByStepPanel({
         >
           <div style={{
             color: 'var(--color-accent-purple)', fontSize: 11,
-            fontWeight: 600, marginBottom: 4,
+            fontWeight: 500, marginBottom: 4,
           }}>
             STEP {i + 1}
           </div>
@@ -532,7 +532,7 @@ export function SourceConnectFlow({
     <div className="flex h-full gap-6">
       {/* Sidebar */}
       <div className="w-48 shrink-0 flex flex-col gap-1 py-1">
-        <p className="text-xs font-semibold uppercase tracking-wider mb-2"
+        <p className="text-xs font-semibold mb-2"
           style={{ color: 'var(--color-text-tertiary)' }}>
           Sources
         </p>

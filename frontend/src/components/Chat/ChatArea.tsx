@@ -6,15 +6,10 @@ import { StreamingDots } from './StreamingDots';
 import { useAppStore } from '../../lib/store';
 import { shouldAutoplayFinishedReply, useTtsStore } from '../../lib/tts';
 import { stripThinkTags } from '../../lib/message-text';
-import { Sparkles, PanelRightOpen, PanelRightClose, Database, MessageSquare, X } from 'lucide-react';
+import { PanelRightOpen, PanelRightClose, Database, MessageSquare, X, ArrowUpRight } from 'lucide-react';
 import { listConnectors } from '../../lib/connectors-api';
-
-function getGreeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 18) return 'Good afternoon';
-  return 'Good evening';
-}
+import { HeroBackdrop, PhotoCredit } from '../HeroPhoto';
+import { modKey } from '../HintBar';
 
 export function ChatArea() {
   const activeId = useAppStore((s) => s.activeId);
@@ -22,6 +17,7 @@ export function ChatArea() {
   const streamState = useAppStore((s) => s.streamState);
   const systemPanelOpen = useAppStore((s) => s.systemPanelOpen);
   const toggleSystemPanel = useAppStore((s) => s.toggleSystemPanel);
+  const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const navigate = useNavigate();
   const listRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
@@ -131,45 +127,64 @@ export function ChatArea() {
   const isEmpty = messages.length === 0 && !isCurrentChatStreaming;
 
   const PanelIcon = systemPanelOpen ? PanelRightClose : PanelRightOpen;
+  const conversation = useAppStore((s) => s.conversations.find((c) => c.id === s.activeId));
+  const turns = messages.filter((m) => m.role === 'user').length;
+  const title = isEmpty ? 'New chat' : conversation?.title || 'Chat';
+  const meta = [conversation?.model, turns > 0 ? `${turns} ${turns === 1 ? 'turn' : 'turns'}` : null]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <div className="flex flex-col h-full">
-      {/* Toggle bar */}
-      <div className="flex items-center justify-end px-3 py-1.5 shrink-0">
+      {/* Title bar */}
+      <div
+        className={`flex items-center gap-3 ${sidebarOpen ? 'pl-16 md:pl-8' : 'pl-16'} pr-4 shrink-0`}
+        style={{ height: 60, borderBottom: '1px solid var(--color-border)' }}
+      >
+        <h1 className="text-[17px] font-light tracking-[-0.01em] truncate" style={{ color: 'var(--color-text)' }}>
+          {title}
+        </h1>
+        {meta && (
+          <span className="text-xs truncate shrink-0" style={{ color: 'var(--color-text-tertiary)' }}>
+            {meta}
+          </span>
+        )}
         <button
           onClick={toggleSystemPanel}
-          className="p-1.5 rounded-md transition-colors cursor-pointer"
+          className="ml-auto w-9 h-9 flex items-center justify-center rounded-full transition-colors cursor-pointer"
           style={{ color: 'var(--color-text-tertiary)' }}
-          title={`${systemPanelOpen ? 'Hide' : 'Show'} system panel (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+I)`}
+          title={`${systemPanelOpen ? 'Hide' : 'Show'} system panel (${modKey('I')})`}
+          aria-label={`${systemPanelOpen ? 'Hide' : 'Show'} system panel`}
         >
-          <PanelIcon size={16} />
+          <PanelIcon size={16} strokeWidth={1.5} />
         </button>
       </div>
 
       {/* Data sources banner */}
-      {hasConnectedSources === false && !bannerDismissed && (
+      {hasConnectedSources === false && !bannerDismissed && !isEmpty && (
         <div
-          className="mx-4 mb-2 flex items-center gap-3 px-4 py-3 rounded-lg text-sm shrink-0"
+          className="mx-6 mt-4 flex items-center gap-3 pl-4 pr-2 py-2.5 rounded-xl text-[13px] shrink-0"
           style={{
-            background: 'var(--color-accent-subtle)',
+            background: 'var(--card-surface)',
             border: '1px solid var(--color-border)',
           }}
         >
-          <Database size={16} style={{ color: 'var(--color-accent)', flexShrink: 0 }} />
+          <Database size={15} strokeWidth={1.5} style={{ color: 'var(--color-text-tertiary)', flexShrink: 0 }} />
           <span style={{ color: 'var(--color-text-secondary)', flex: 1 }}>
-            Connect your data sources (Gmail, iMessage, Slack, etc.) to get personalized answers.
+            Connect your data sources (Gmail, iMessage, Slack and more) to get personal answers.
           </span>
           <button
             onClick={() => navigate('/data-sources')}
-            className="px-3 py-1 rounded text-xs font-medium cursor-pointer"
-            style={{ background: 'var(--color-accent)', color: 'var(--color-on-accent)', border: 'none' }}
+            className="h-8 px-3 rounded-lg text-[12.5px] cursor-pointer"
+            style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text)', border: '1px solid var(--color-input-border)' }}
           >
             Connect
           </button>
           <button
             onClick={() => setBannerDismissed(true)}
-            className="p-1 rounded cursor-pointer"
+            className="w-8 h-8 flex items-center justify-center rounded-full cursor-pointer"
             style={{ color: 'var(--color-text-tertiary)', background: 'transparent', border: 'none' }}
+            aria-label="Dismiss"
           >
             <X size={14} />
           </button>
@@ -181,54 +196,41 @@ export function ChatArea() {
         className="flex-1 overflow-y-auto"
       >
         {isEmpty ? (
-          <div className="flex flex-col items-center justify-center h-full px-4">
-            <div
-              className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4"
-              style={{ background: 'var(--color-accent-subtle)', color: 'var(--color-accent)' }}
-            >
-              <Sparkles size={24} />
-            </div>
-            <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--color-text)' }}>
-              {getGreeting()}
-            </h2>
-            <p className="text-sm text-center max-w-sm mb-6" style={{ color: 'var(--color-text-secondary)' }}>
-              Ask anything. Your AI runs locally — private, fast, and always available.
-            </p>
-
-            {/* Quick action hints */}
-            <div className="flex gap-3">
-              <button
-                onClick={() => navigate('/data-sources')}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs cursor-pointer transition-colors"
-                style={{
-                  background: 'var(--color-bg-secondary)',
-                  border: '1px solid var(--color-border)',
-                  color: 'var(--color-text-secondary)',
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--color-accent)')}
-                onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--color-border)')}
-              >
-                <Database size={14} style={{ color: 'var(--color-accent)' }} />
-                Connect Data Sources
-              </button>
-              <button
-                onClick={() => { navigate('/data-sources'); setTimeout(() => window.dispatchEvent(new CustomEvent('switch-tab', { detail: 'messaging' })), 100); }}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs cursor-pointer transition-colors"
-                style={{
-                  background: 'var(--color-bg-secondary)',
-                  border: '1px solid var(--color-border)',
-                  color: 'var(--color-text-secondary)',
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--color-accent)')}
-                onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--color-border)')}
-              >
-                <MessageSquare size={14} style={{ color: 'var(--color-accent)' }} />
-                Set Up Messaging Channels
-              </button>
-            </div>
+          <div className="h-full px-6 py-6 flex">
+            <section className="relative flex-1 min-h-[360px] overflow-hidden flex flex-col justify-end sn-card" style={{ borderRadius: 'var(--radius-2xl)' }}>
+              <HeroBackdrop position="center 60%" />
+              <div className="relative px-8 md:px-12 pb-10 md:pb-12 pt-24 max-w-[760px]">
+                <p className="hud-label mb-4 flex items-center gap-2" style={{ color: 'var(--color-text-secondary)' }}>
+                  <span className="w-1 h-1" style={{ background: 'var(--color-accent)' }} aria-hidden="true" />
+                  New chat
+                </p>
+                <h2 className="sn-lede text-[34px] md:text-[44px]">
+                  <b>Ask anything.</b> It runs on this machine, so it stays private and answers fast.
+                </h2>
+                <div className="flex flex-wrap gap-2.5 mt-8">
+                  <button
+                    onClick={() => navigate('/data-sources')}
+                    className="sn-hero-action"
+                  >
+                    <Database size={14} strokeWidth={1.5} />
+                    {hasConnectedSources ? 'Data sources' : 'Connect data sources'}
+                    <ArrowUpRight size={13} strokeWidth={1.5} style={{ color: 'var(--color-text-tertiary)' }} />
+                  </button>
+                  <button
+                    onClick={() => { navigate('/data-sources'); setTimeout(() => window.dispatchEvent(new CustomEvent('switch-tab', { detail: 'messaging' })), 100); }}
+                    className="sn-hero-action"
+                  >
+                    <MessageSquare size={14} strokeWidth={1.5} />
+                    Set up messaging channels
+                    <ArrowUpRight size={13} strokeWidth={1.5} style={{ color: 'var(--color-text-tertiary)' }} />
+                  </button>
+                </div>
+              </div>
+              <PhotoCredit className="absolute right-6 bottom-4" />
+            </section>
           </div>
         ) : (
-          <div className="max-w-[var(--chat-max-width)] mx-auto px-4 py-6">
+          <div className="max-w-[var(--chat-max-width)] mx-auto px-6 py-10">
             {messages.map((msg, i) => {
               const isLastAssistant =
                 i === messages.length - 1 && msg.role === 'assistant';
