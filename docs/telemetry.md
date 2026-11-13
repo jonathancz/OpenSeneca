@@ -46,25 +46,13 @@ jarvis config set analytics.enabled false
 Restart the server and reload the frontend after changing the setting.
 An existing, explicitly configured `enabled = true` remains enabled until
 changed. Configurations without an analytics setting now default to off.
-Local performance telemetry and Savings Leaderboard participation remain
-separate settings.
+Local performance telemetry is a separate setting.
 
-In the browser and desktop apps, the existing **Share Your Savings** dialog
-offers explicit buttons without a checkbox. Displaying or closing the dialog
-does not enable analytics. Confirm with **Enable analytics only** or
-**Enable analytics & enter giveaway**, or use **Continue without sharing**
-to turn analytics off. A saved UI choice takes effect immediately in both
-the frontend and the running backend.
-
-Joining the leaderboard requires a display name and contact email submitted
-with savings to the configured Supabase leaderboard. Analytics preferences
-send only the on/off choice to the local server; names and emails are not
-attached to PostHog usage events by this form. The existing Mac mini
-promotion concerns leaderboard participation, not analytics consent.
-Use **Enter giveaway only** to join with analytics off; submitting the
-name/email form with Enter also uses that option. Stopping leaderboard
-updates and disabling usage analytics are separate actions. Stopping updates
-does not delete previously submitted entries from Supabase.
+Seneca's web UI has no analytics or leaderboard prompt: the upstream
+"Share Your Savings" / Mac mini giveaway dialog and the Supabase savings
+leaderboard were removed, so the UI never turns analytics on and never
+sends savings, names or emails anywhere. Use the config setting above if
+you ever want to change analytics.
 
 ## What we collect
 
@@ -179,7 +167,3 @@ previous UUID remain on the receiving service until deleted there.
   in [`src/openjarvis/telemetry/`](../src/openjarvis/telemetry/). It
   never leaves the machine and is controlled by `[telemetry]` (not
   `[analytics]`) in `config.toml`.
-- The leaderboard / contest opt-in (`OptInModal.tsx`) is a separate,
-  voluntary feature that publicly shares your energy and savings on
-  the OpenJarvis leaderboard. It is **not** the same as analytics and
-  requires explicit opt-in with a display name and email.
