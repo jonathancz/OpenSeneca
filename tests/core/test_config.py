@@ -247,11 +247,13 @@ class TestAgentConfigNew:
         )
 
     def test_default_system_prompt_anchors_identity(self) -> None:
-        """#540: the hardened wording must name OpenJarvis and explicitly
-        deny the model's training identity so distilled models stop
-        claiming to be Claude/ChatGPT/etc."""
+        """#540: the hardened wording must name the assistant (Seneca) and
+        explicitly deny the model's training identity so distilled models
+        stop claiming to be Claude/ChatGPT/etc."""
         prompt = AgentConfig().default_system_prompt
-        assert "OpenJarvis" in prompt
+        assert prompt.startswith("You are Seneca,")
+        assert "identify yourself as Seneca" in prompt
+        assert "OpenJarvis" not in prompt
         assert "not Claude" in prompt
 
 
@@ -616,3 +618,11 @@ def test_mining_config_pool_parsed_as_pool_target(tmp_path):
     cfg = load_config(target)
     assert isinstance(cfg.mining.submit_target, PoolTarget)
     assert cfg.mining.submit_target.url == "https://pool.openjarvis.ai/submit"
+
+
+def test_seeded_persona_is_seneca():
+    """New installs seed SOUL.md with the Seneca persona."""
+    from openjarvis.cli._bootstrap import _DEFAULT_SOUL
+
+    assert "You are Seneca" in _DEFAULT_SOUL
+    assert "Jarvis" not in _DEFAULT_SOUL

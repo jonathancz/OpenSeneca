@@ -71,7 +71,7 @@ def detect_cloud_keys() -> Optional[CloudProvider]:
 # Initial config writer
 # ---------------------------------------------------------------------------
 
-_DEFAULT_SOUL = "# Agent Persona\n\nYou are Jarvis, a helpful personal AI assistant.\n"
+_DEFAULT_SOUL = "# Agent Persona\n\nYou are Seneca, a helpful personal AI assistant.\n"
 _DEFAULT_MEMORY = "# Agent Memory\n\n"
 _DEFAULT_USER = "# User Profile\n\n"
 
