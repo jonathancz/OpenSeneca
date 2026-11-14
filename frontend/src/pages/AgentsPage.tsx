@@ -112,12 +112,17 @@ function StatusBadge({ status }: { status: string }) {
 
 function StatusDot({ status }: { status: string }) {
   const color = statusColor(status);
+  // Colour alone is not enough to tell running (blue) from attention
+  // (violet) states, so the dot always carries its label.
   return (
-    <span
-      className="w-2 h-2 rounded-full inline-block flex-shrink-0"
-      style={{ background: color }}
-      title={status}
-    />
+    <span className="inline-flex items-center gap-1.5 flex-shrink-0 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+      <span
+        className="w-2 h-2 rounded-full inline-block flex-shrink-0"
+        style={{ background: color }}
+        aria-hidden="true"
+      />
+      {status.replace('_', ' ')}
+    </span>
   );
 }
 
@@ -594,7 +599,7 @@ function ToolsPicker({
                 color: hovered
                   ? hovered.configured
                     ? 'var(--color-accent)'
-                    : '#f59e0b'
+                    : 'var(--color-warning)'
                   : 'var(--color-text-tertiary)',
                 opacity: hovered ? 1 : 0.5,
               }}

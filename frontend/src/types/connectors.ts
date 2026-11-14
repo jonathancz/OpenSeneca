@@ -142,7 +142,7 @@ export const SOURCE_CATALOG: ConnectorMeta[] = [
     auth_type: 'oauth',
     category: 'communication',
     icon: 'Mail',
-    color: 'text-amber-400',
+    color: 'text-[var(--color-warning)]',
     description: 'Any IMAP mailbox',
     unitLabel: 'emails',
     steps: [
@@ -254,7 +254,7 @@ export const SOURCE_CATALOG: ConnectorMeta[] = [
     auth_type: 'oauth',
     category: 'documents',
     icon: 'Mic',
-    color: 'text-amber-400',
+    color: 'text-[var(--color-warning)]',
     description: 'AI meeting notes',
     unitLabel: 'meeting notes',
     steps: [
@@ -420,7 +420,7 @@ export const SOURCE_CATALOG: ConnectorMeta[] = [
     auth_type: 'local',
     category: 'documents',
     icon: 'FileText',
-    color: 'text-yellow-400',
+    color: 'text-[var(--color-warning)]',
     description: 'macOS Notes app',
     unitLabel: 'notes',
     steps: [
@@ -441,7 +441,7 @@ export const SOURCE_CATALOG: ConnectorMeta[] = [
     auth_type: 'local',
     category: 'pim',
     icon: 'Users',
-    color: 'text-orange-400',
+    color: 'text-[var(--color-accent)]',
     description: 'macOS Contacts app',
     unitLabel: 'contacts',
     steps: [
