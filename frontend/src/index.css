@@ -9,7 +9,7 @@
 /*
  * Seneca design tokens (face wash v3: mostly Vexto, three HUD traces).
  * Dark only. Near black neutral surfaces, light grey text with white
- * emphasis, one ember orange accent used sparingly.
+ * emphasis, one sky blue accent used sparingly, soft violet for attention.
  * Components read these through var(--color-*); keep names stable.
  */
 
@@ -47,19 +47,19 @@
     --color-text-faint: #45454A;
     --color-text-inverse: #0B0B0C;
 
-    /* One accent: ember orange. "This is spending compute right now." */
-    --color-accent: #FF5B22;
-    --color-accent-hover: #FF7240;
-    --color-accent-subtle: rgba(255, 91, 34, 0.12);
-    --color-accent-glow: rgba(255, 91, 34, 0.22);
-    --color-accent-line: rgba(255, 91, 34, 0.5);
+    /* One accent: sky blue. "This is spending compute right now." */
+    --color-accent: #5EBAFF;
+    --color-accent-hover: #82CAFF;
+    --color-accent-subtle: rgba(94, 186, 255, 0.12);
+    --color-accent-glow: rgba(94, 186, 255, 0.22);
+    --color-accent-line: rgba(94, 186, 255, 0.5);
 
-    /* Former secondary accents, toned into the palette. Purple and blue are
-       no longer hues: they read as quiet neutrals so orange stays the one
-       accent; amber is the warning tone. */
-    --color-accent-amber: #E2B24A;
-    --color-accent-amber-hover: #EBC36A;
-    --color-accent-amber-subtle: rgba(226, 178, 74, 0.12);
+    /* Former secondary accents. "purple" and "blue-subtle" are quiet
+       neutrals, not hues, so the sky blue stays the one accent. The "amber"
+       tokens keep their names but hold the soft violet attention tone. */
+    --color-accent-amber: #A280FF;
+    --color-accent-amber-hover: #B79DFF;
+    --color-accent-amber-subtle: rgba(162, 128, 255, 0.12);
     --color-accent-purple: #D6D6D1;
     --color-accent-purple-hover: #F5F5F3;
     --color-accent-purple-subtle: rgba(255, 255, 255, 0.06);
@@ -67,7 +67,7 @@
 
     /* Semantics */
     --color-success: #6CC48C;
-    --color-warning: #E2B24A;
+    --color-warning: #A280FF;
     --color-error: #F0524F;
 
     --color-code-bg: #0F0F10;
@@ -182,7 +182,7 @@
   .hljs-selector-tag,
   .hljs-literal,
   .hljs-section,
-  .hljs-link { color: #FF8A5C; }
+  .hljs-link { color: #8FCBFF; }
 
   .hljs-string,
   .hljs-title,
@@ -204,7 +204,7 @@
   .hljs-number,
   .hljs-regexp,
   .hljs-built_in,
-  .hljs-params { color: #E2B24A; }
+  .hljs-params { color: #A280FF; }
 
   .hljs-function { color: #D6D6D1; }
 
@@ -535,7 +535,7 @@
     50%, 100% { opacity: 0; }
   }
 
-  /* Thin orange caret while a reply streams */
+  /* Thin blue caret while a reply streams */
   .sn-caret {
     display: inline-block;
     width: 2px;
@@ -577,7 +577,7 @@
   --border: rgba(255, 255, 255, 0.07);
   --input: rgba(255, 255, 255, 0.10);
   --ring: rgba(255, 255, 255, 0.20);
-  --chart-1: #FF5B22;
+  --chart-1: #5EBAFF;
   --chart-2: #F5F5F3;
   --chart-3: #A8A8A4;
   --chart-4: #7F7F7A;
@@ -585,7 +585,7 @@
   --radius: 0.625rem;
   --sidebar: #0C0C0D;
   --sidebar-foreground: #F5F5F3;
-  --sidebar-primary: #FF5B22;
+  --sidebar-primary: #5EBAFF;
   --sidebar-primary-foreground: #0B0B0C;
   --sidebar-accent: #1A1A1C;
   --sidebar-accent-foreground: #F5F5F3;
@@ -797,7 +797,7 @@ select { color-scheme: dark; }
   transition: width 360ms var(--ease);
 }
 
-/* Vexto's faint gradient band behind a key phrase, with a thin orange edge */
+/* Vexto's faint gradient band behind a key phrase, with a thin accent edge */
 .sn-band {
   padding: 0 0.12em;
   background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.07) 100%);
