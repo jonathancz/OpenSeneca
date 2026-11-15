@@ -708,6 +708,32 @@ class FeedCache:
         ] = {}
         self._used_sessions: set[str] = set()
         self._used_changes: set[tuple[str, str | None]] = set()
+        self._built: dict[str, dict[str, dict[str, Any] | None]] = {}
+        self._used_built: set[str] = set()
+
+    def remember(
+        self,
+        task_id: str,
+        transcript: dict[str, Any] | None,
+        changes: dict[str, Any] | None,
+    ) -> None:
+        """Keep what was last built for a task, to reuse once it closes."""
+        self._used_built.add(task_id)
+        self._built[task_id] = {"transcript": transcript, "changes": changes}
+
+    def kept(self, task_id: str, out_dir: Path | None) -> dict[str, Any]:
+        """What was last built for a closed task: from memory, else its files."""
+        self._used_built.add(task_id)
+        hit = self._built.get(task_id)
+        if hit is None:
+            hit = {
+                "transcript": _read_output(
+                    out_dir, "transcripts", task_id, TRANSCRIPT_SCHEMA
+                ),
+                "changes": _read_output(out_dir, "changes", task_id, CHANGES_SCHEMA),
+            }
+            self._built[task_id] = hit
+        return hit
 
     def _session(self, path: Path) -> dict[str, Any] | None:
         name = str(path)
@@ -766,8 +792,29 @@ class FeedCache:
             del self._sessions[name]
         for slot in set(self._changes) - self._used_changes:
             del self._changes[slot]
+        for task_id in set(self._built) - self._used_built:
+            del self._built[task_id]
         self._used_sessions.clear()
         self._used_changes.clear()
+        self._used_built.clear()
+
+
+def _read_output(
+    out_dir: Path | None, sub: str, task_id: str, schema: str
+) -> dict[str, Any] | None:
+    if out_dir is None or "/" in task_id or task_id.startswith("."):
+        return None
+    try:
+        data = json.loads((out_dir / sub / f"{task_id}.json").read_bytes())
+    except (OSError, ValueError):
+        return None
+    if (
+        not isinstance(data, dict)
+        or data.get("schema") != schema
+        or data.get("task_id") != task_id
+    ):
+        return None
+    return data
 
 
 def find_transcript(
@@ -1123,6 +1170,8 @@ def build_fleet(
             state_source = "snapshot"
 
         closed = row is not None and (row.checked or row.section == "done")
+        public_id = _public(privacy, task_id, client)
+        kept = cache.kept(public_id, cfg.out_dir) if closed and not client else None
 
         # The agent's own conversation, trimmed (own projects only).
         transcript_path = None
@@ -1138,6 +1187,12 @@ def build_fleet(
         entries: list[dict[str, Any]] = []
         if transcript_path is not None:
             entries = cache.entries(transcript_path)
+        elif kept is not None and kept["transcript"] is not None:
+            entries = [
+                e
+                for e in kept["transcript"].get("entries") or []
+                if isinstance(e, dict) and e.get("t") in ("user", "agent", "tool")
+            ]
 
         times = [t for t in (status_mtime, busy.get("ts")) if t]
         times += [e["at"] for e in entries[-5:] if e.get("at")]
@@ -1171,7 +1226,6 @@ def build_fleet(
         ):
             continue
 
-        public_id = _public(privacy, task_id, client)
         pr_url = None if client else _latest_pr(events, row)
         report = (data_dir / task_id / "report.md").is_file()
         status_line = None
@@ -1212,6 +1266,14 @@ def build_fleet(
                     "added": ch["added"],
                     "removed": ch["removed"],
                 }
+        if kept is not None and kept["changes"] is not None:
+            ch = kept["changes"]
+            changes[public_id] = ch
+            diff = {
+                "files": ch.get("total_files", 0),
+                "added": ch.get("added", 0),
+                "removed": ch.get("removed", 0),
+            }
 
         title = (row.title if row else "") or task_id
         agent = {
@@ -1249,7 +1311,9 @@ def build_fleet(
         }
         agents.append(agent)
 
-        if not client:
+        if kept is not None and kept["transcript"] is not None:
+            transcripts[public_id] = kept["transcript"]
+        elif not client:
             items: list[dict[str, Any]] = []
             brief = read_text(data_dir / task_id / "brief.md", 200_000)
             if brief:
@@ -1278,6 +1342,10 @@ def build_fleet(
                     "bound": transcript_path is not None,
                     "entries": items[-TRANSCRIPT_MAX_ENTRIES:],
                 }
+        if not client and not closed:
+            cache.remember(
+                public_id, transcripts.get(public_id), changes.get(public_id)
+            )
 
         since_fallback = status_at or last_activity
         for d in open_decisions:
@@ -1469,6 +1537,13 @@ def write_fleet(out_dir: Path, result: FeedResult, previous: dict[str, bytes]) -
     return True
 
 
+def _same_bytes(path: Path, data: bytes) -> bool:
+    try:
+        return path.read_bytes() == data
+    except OSError:
+        return False
+
+
 def _stable_dump(obj: dict[str, Any], *volatile: str) -> bytes:
     return _dump({k: v for k, v in obj.items() if k not in volatile})
 
@@ -1493,6 +1568,9 @@ def write_outputs(out_dir: Path, result: FeedResult, previous: dict[str, bytes])
             )
     for rel, (key, data) in wanted.items():
         if previous.get(rel) != key or not (out_dir / rel).exists():
+            if rel not in previous and _same_bytes(out_dir / rel, data):
+                previous[rel] = key
+                continue
             _atomic_write_bytes(out_dir / rel, data)
             previous[rel] = key
             written += 1

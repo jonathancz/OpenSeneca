@@ -573,12 +573,34 @@ def test_unchanged_files_are_not_read_again(fm, monkeypatch):
     assert "Later." in texts
 
 
-def test_closed_tasks_skip_transcript_and_git_reads(fm, monkeypatch):
+def _close_alpha(fm: dict) -> None:
     backlog = fm["home"] / "data" / "backlog.md"
     backlog.write_text(
         backlog.read_text().replace(
             "- [ ] alpha - Crew home", "- [x] alpha - Crew home"
         )
+    )
+
+
+def _output_state(out: Path) -> dict[str, tuple[bytes, int]]:
+    return {
+        rel: ((out / rel).read_bytes(), (out / rel).stat().st_mtime_ns)
+        for rel in ("transcripts/alpha.json", "changes/alpha.json")
+    }
+
+
+def test_closing_a_task_keeps_its_files_untouched(fm, monkeypatch):
+    cache = feed.FeedCache()
+    previous: dict[str, bytes] = {}
+    open_res = build_fleet(cfg_for(fm), now=NOW, cache=cache)
+    write_outputs(fm["out"], open_res, previous)
+    before = _output_state(fm["out"])
+    open_alpha = {a["id"]: a for a in open_res.fleet["agents"]}["alpha"]
+
+    _close_alpha(fm)
+    (fm["state"] / "alpha.status").write_text(
+        (fm["state"] / "alpha.status").read_text()
+        + f"done [at={fm['spawn'] + 1200}]: merged\n"
     )
     monkeypatch.setattr(
         feed, "trim_transcript", lambda *a, **k: pytest.fail("transcript read")
@@ -586,10 +608,17 @@ def test_closed_tasks_skip_transcript_and_git_reads(fm, monkeypatch):
     monkeypatch.setattr(
         feed, "read_changes", lambda *a, **k: pytest.fail("git read")
     )
-    res = build_fleet(cfg_for(fm), now=NOW)
-    alpha = {a["id"]: a for a in res.fleet["agents"]}["alpha"]
-    assert alpha["closed"] is True and alpha["has_transcript"] is False
-    assert "alpha" not in res.changes
+    for step, use_cache in ((1, cache), (2, cache), (3, feed.FeedCache())):
+        res = build_fleet(cfg_for(fm), now=NOW + step * 60, cache=use_cache)
+        alpha = {a["id"]: a for a in res.fleet["agents"]}["alpha"]
+        assert alpha["closed"] is True
+        assert alpha["has_transcript"] is True
+        assert alpha["diff"] == open_alpha["diff"]
+        assert alpha["last_activity"] >= open_alpha["last_activity"]
+        write_outputs(
+            fm["out"], res, previous if use_cache is cache else {}
+        )
+        assert _output_state(fm["out"]) == before
 
 
 def test_in_flight_rows_without_an_agent_are_kept(fm):
