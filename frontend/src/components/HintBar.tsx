@@ -13,7 +13,7 @@ type Hint = { keys: string[]; label: string };
 function hintsFor(path: string): Hint[] {
   const models: Hint = { keys: [`${modKey('K')}`], label: 'Models' };
   switch (path) {
-    case '/':
+    case '/chat':
       return [
         { keys: ['Enter'], label: 'Send' },
         { keys: ['Shift', 'Enter'], label: 'New line' },

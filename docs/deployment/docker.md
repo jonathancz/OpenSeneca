@@ -144,6 +144,10 @@ The `--engine` and `--model` flags in the `command` take precedence over the eng
 
 The first start downloads the faster-whisper `small` and Kokoro weights into the `jarvis-cache` volume (`preload_voice_models` loads them when the bot connects). See the [channels guide](../user-guide/channels.md#private-discord-assistant) for the behaviour.
 
+### Crew cockpit
+
+`docker-compose.cockpit.yml` mounts the folder the host cockpit feeder writes (`OPENSENECA_COCKPIT_DIR`, default `~/.local/share/openseneca/cockpit`) read only into `jarvis`, for the read only Crew page. See [`scripts/cockpit-feed/README.md`](https://github.com/jonathancz/OpenSeneca/blob/main/scripts/cockpit-feed/README.md) for the feeder and how to start the stack with it.
+
 ## GPU Overrides
 
 | Override file                      | Effect                                                                                     |

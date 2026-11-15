@@ -1,0 +1,19 @@
+# User unit for the crew cockpit feeder. Install with:
+#
+#   mkdir -p ~/.config/systemd/user
+#   sed "s#@REPO@#$PWD#" scripts/cockpit-feed/cockpit-feed.service \
+#     > ~/.config/systemd/user/cockpit-feed.service
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now cockpit-feed
+[Unit]
+Description=Seneca crew cockpit feeder (reads firstmate records, read only)
+
+[Service]
+ExecStart=@REPO@/scripts/cockpit-feed/run.sh
+Restart=on-failure
+RestartSec=30
+Nice=19
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=default.target

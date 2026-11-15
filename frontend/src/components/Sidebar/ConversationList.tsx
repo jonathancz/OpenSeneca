@@ -84,7 +84,7 @@ export function ConversationList({ searchQuery }: Props) {
                 <button
                   onClick={() => {
                     selectConversation(conv.id);
-                    navigate('/');
+                    navigate('/chat');
                   }}
                   className="flex-1 text-left pl-6 pr-3 py-2.5 min-w-0 cursor-pointer"
                 >

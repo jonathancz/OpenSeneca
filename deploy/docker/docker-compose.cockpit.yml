@@ -1,0 +1,14 @@
+# Crew cockpit on top of docker-compose.yml (and docker-compose.discord.yml):
+#
+#   docker compose -f deploy/docker/docker-compose.yml \
+#     -f deploy/docker/docker-compose.cockpit.yml up -d
+#
+# The host feeder (scripts/cockpit-feed/) writes fleet.json from firstmate's
+# records into OPENSENECA_COCKPIT_DIR. Only that folder is mounted, read only:
+# never the firstmate home, tmux, ~/.claude or any git credentials.
+services:
+  jarvis:
+    environment:
+      - OPENJARVIS_COCKPIT_DIR=/home/openjarvis/cockpit
+    volumes:
+      - ${OPENSENECA_COCKPIT_DIR:-${HOME}/.local/share/openseneca/cockpit}:/home/openjarvis/cockpit:ro

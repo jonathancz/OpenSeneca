@@ -5,9 +5,12 @@ import { ApprovalBell } from './ApprovalBell';
 import { useAppStore } from '../lib/store';
 import { fetchEnergy, fetchManagedAgents } from '../lib/api';
 import { startStatusPolling } from '../lib/status-poll';
+import { useCrewStore } from '../lib/crew-api';
+import { crewBadgeCount } from '../lib/crew';
 
 export const NAV_ITEMS = [
-  { path: '/', label: 'Chat' },
+  { path: '/', label: 'Crew' },
+  { path: '/chat', label: 'Chat' },
   { path: '/dashboard', label: 'Dashboard' },
   { path: '/data-sources', label: 'Data sources' },
   { path: '/agents', label: 'Agents' },
@@ -51,6 +54,7 @@ export function TopBar({ apiReachable }: { apiReachable: boolean | null }) {
   const isStreaming = useAppStore((s) => s.streamState.isStreaming);
   const [energyJ, setEnergyJ] = useState<number | null>(null);
   const [hasRunningAgent, setHasRunningAgent] = useState(false);
+  const crewWaiting = useCrewStore((s) => crewBadgeCount(s.response?.fleet));
 
   // Energy counter and running agent state, polled quietly every 30 s. Started
   // once per reachable backend; savings updates must not restart it.
@@ -87,7 +91,7 @@ export function TopBar({ apiReachable }: { apiReachable: boolean | null }) {
         onClick={() => navigate('/')}
         className="flex items-center gap-2.5 shrink-0 cursor-pointer"
         style={{ color: 'var(--color-text)' }}
-        aria-label="Seneca, go to chat"
+        aria-label="Seneca, go to Crew"
       >
         <BrandMark />
         <span className="text-[15px] font-normal tracking-[-0.01em] hidden sm:inline">Seneca</span>
@@ -103,8 +107,32 @@ export function TopBar({ apiReachable }: { apiReachable: boolean | null }) {
               className="sn-tab"
               data-active={active}
               aria-current={active ? 'page' : undefined}
+              aria-label={
+                item.path === '/' && crewWaiting > 0
+                  ? `Crew, ${crewWaiting} waiting on you`
+                  : undefined
+              }
             >
               {item.label}
+              {item.path === '/' && crewWaiting > 0 && (
+                <span
+                  aria-hidden="true"
+                  className="tabular-nums"
+                  style={{
+                    fontSize: 11,
+                    minWidth: 18,
+                    height: 18,
+                    padding: '0 5px',
+                    borderRadius: 999,
+                    display: 'inline-grid',
+                    placeItems: 'center',
+                    background: 'var(--color-accent-amber-subtle)',
+                    color: 'var(--color-accent-amber)',
+                  }}
+                >
+                  {crewWaiting}
+                </span>
+              )}
             </button>
           );
         })}
