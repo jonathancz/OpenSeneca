@@ -140,8 +140,14 @@ def test_nudges_use_the_captain_alias_of_the_bridge(tmp_path):
     bridge.send.return_value = True
     app.state.channel_bridge = bridge
     runner = app.state.cockpit_nudges
-    now = time.time()
-    write(tmp_path / "cockpit", "fleet.json", {"generated_at": int(now), "waiting": []})
+    # A fixed midday time in the fleet's own zone: no digest is due and it is
+    # outside quiet hours, whatever the host clock or time zone says.
+    now = 1_763_208_000.0  # 2025-11-15 12:00 UTC
+    write(
+        tmp_path / "cockpit",
+        "fleet.json",
+        {"generated_at": int(now), "tz": "UTC", "waiting": []},
+    )
     runner.tick(now)  # seed
     write(
         tmp_path / "cockpit",
