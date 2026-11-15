@@ -20,6 +20,7 @@ from openjarvis.server.analytics_routes import (
     router as analytics_router,
 )
 from openjarvis.server.api_routes import include_all_routes
+from openjarvis.server.cockpit_routes import install_cockpit
 from openjarvis.server.comparison import comparison_router
 from openjarvis.server.connectors_router import create_connectors_router
 from openjarvis.server.dashboard import dashboard_router
@@ -487,6 +488,9 @@ def create_app(
 
     # Rotating hero photography for the web UI (Unsplash, cached locally).
     install_hero_images(app)
+
+    # Crew cockpit: read only views of firstmate's records, Discord nudges.
+    install_cockpit(app)
 
     # Restore SendBlue channel bindings from database on startup
     _restore_sendblue_bindings(app)

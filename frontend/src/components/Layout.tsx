@@ -5,12 +5,14 @@ import { TopBar } from './TopBar';
 import { HintBar } from './HintBar';
 import { useAppStore } from '../lib/store';
 import { checkHealth } from '../lib/api';
+import { openCrewSocket, refreshFleet } from '../lib/crew-api';
+import { startCrewLive } from '../lib/crew-live';
 
 export function Layout() {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const [apiReachable, setApiReachable] = useState<boolean | null>(null);
   const location = useLocation();
-  const isChat = location.pathname === '/';
+  const isChat = location.pathname === '/chat';
 
   useEffect(() => {
     const check = () => checkHealth().then(setApiReachable);
@@ -23,6 +25,11 @@ export function Layout() {
       window.removeEventListener('focus', onFocus);
     };
   }, []);
+
+  // One live subscription to the crew feed for the whole app: the Crew page
+  // and the tab count read the same copy. It refetches only when the feeder
+  // wrote a new fleet, or slowly while the live socket is down.
+  useEffect(() => startCrewLive({ connect: openCrewSocket, refresh: refreshFleet }), []);
 
   const navigate = useNavigate();
 

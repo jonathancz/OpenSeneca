@@ -217,7 +217,7 @@ function HostedView() {
             <span>Server is running</span>
           </div>
           <button
-            onClick={() => navigate('/')}
+            onClick={() => navigate('/chat')}
             className="inline-flex items-center gap-2.5 px-6 py-3 rounded-xl text-sm font-medium transition-opacity cursor-pointer"
             style={{ background: 'var(--color-accent)', color: 'var(--color-on-accent)' }}
             onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.9')}
@@ -293,7 +293,7 @@ function DesktopView() {
           Ollama inference engine, API server, and AI model are active.
         </p>
         <button
-          onClick={() => navigate('/')}
+          onClick={() => navigate('/chat')}
           className="inline-flex items-center gap-2.5 px-6 py-3 rounded-xl text-sm font-medium transition-opacity cursor-pointer"
           style={{ background: 'var(--color-accent)', color: 'var(--color-on-accent)' }}
           onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.9')}

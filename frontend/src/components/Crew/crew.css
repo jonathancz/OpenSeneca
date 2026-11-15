@@ -1,0 +1,78 @@
+/*
+ * Crew board. Follows the cockpit mockup and Seneca's tokens: the accent (sky
+ * blue) means compute running now, the attention tone (violet, held in the
+ * "amber" tokens) means the captain is needed. Every state also has a glyph
+ * and a label, never colour alone.
+ */
+
+.cw-page { flex: 1; min-height: 0; overflow-y: auto; }
+.cw-head { max-width: 1480px; padding: 30px 32px 6px; }
+@media (max-width: 767px) { .cw-head { padding: 22px 16px 4px; } }
+.cw-lede { font-size: 30px; max-width: 900px; }
+@media (max-width: 767px) { .cw-lede { font-size: 24px; } }
+.cw-meta { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 12.5px; color: var(--color-text-tertiary); }
+.cw-meta span { display: inline-flex; align-items: center; gap: 6px; }
+.cw-live-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--color-success); }
+.cw-live-dot[data-stale='true'] { background: var(--color-text-faint); }
+
+/* Board: five columns that scroll sideways on a laptop and stack on a phone. */
+.cw-board {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(240px, 1fr));
+  gap: 14px;
+  padding: 22px 32px 40px;
+  max-width: 1480px;
+  overflow-x: auto;
+  align-items: start;
+}
+@media (max-width: 767px) {
+  .cw-board { grid-template-columns: minmax(0, 1fr); padding: 18px 16px 32px; overflow-x: visible; }
+  /* One column on a phone: what needs the captain comes first. */
+  .cw-col[data-col='waiting'] { order: -2; }
+  .cw-col[data-col='review'] { order: -1; }
+}
+.cw-col { min-width: 0; border-radius: var(--radius-xl); border: 1px solid var(--color-border); background: rgba(255, 255, 255, 0.012); }
+.cw-col[data-col='waiting'] { border-color: var(--color-accent-amber-subtle); }
+.cw-col-head { display: flex; align-items: baseline; gap: 8px; padding: 12px 14px 10px; border-bottom: 1px dashed var(--color-rule); font-size: 13px; color: var(--color-text); }
+.cw-col-head::before { content: ''; width: 4px; height: 4px; background: var(--color-text-tertiary); align-self: center; }
+.cw-col[data-col='waiting'] .cw-col-head::before { background: var(--color-accent-amber); }
+.cw-col[data-col='progress'] .cw-col-head::before { background: var(--color-accent); }
+.cw-count { margin-left: auto; font-size: 12px; color: var(--color-text-tertiary); font-variant-numeric: tabular-nums; }
+.cw-col[data-col='waiting'] .cw-count[data-on='true'] { color: var(--color-accent-amber); }
+.cw-cards { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+.cw-empty { padding: 8px 6px 12px; font-size: 12.5px; color: var(--color-text-tertiary); }
+.cw-more { width: 100%; height: 30px; border-radius: 999px; border: 1px solid var(--color-border); font-size: 12px; color: var(--color-text-secondary); cursor: pointer; transition: border-color 140ms var(--ease), color 140ms var(--ease); }
+.cw-more:hover { border-color: var(--color-border-strong); color: var(--color-text); }
+
+.cw-card { border-radius: 12px; border: 1px solid var(--color-border); background: var(--card-surface); padding: 10px 12px 11px; min-width: 0; }
+.cw-card-top { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--color-text-tertiary); min-width: 0; }
+.cw-avatar { width: 18px; height: 18px; border-radius: 6px; display: grid; place-items: center; flex: none; font-size: 10px; font-weight: 500; color: var(--color-text); background: var(--color-bg-hover); border: 1px solid var(--color-border); }
+.cw-project { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.cw-age { margin-left: auto; font-size: 12px; color: var(--color-text-tertiary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cw-title { margin-top: 6px; font-size: 13.5px; line-height: 1.4; color: var(--color-text); overflow-wrap: anywhere; }
+.cw-line { margin-top: 4px; font-size: 12.5px; line-height: 1.45; color: var(--color-text-secondary); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.cw-card-foot { margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--color-text-secondary); }
+.cw-state { display: inline-flex; align-items: center; gap: 6px; }
+.cw-card[data-glyph='needs'] .cw-state, .cw-card[data-glyph='blocked'] .cw-state { color: var(--color-accent-amber); }
+.cw-link { margin-left: auto; color: var(--color-text); text-decoration: underline; text-decoration-color: var(--color-border-strong); text-underline-offset: 3px; display: inline-flex; align-items: center; gap: 4px; }
+.cw-link:hover { text-decoration-color: var(--color-text); }
+
+.cw-foot { max-width: 1480px; padding: 0 32px 32px; font-size: 12px; line-height: 1.6; color: var(--color-text-tertiary); }
+@media (max-width: 767px) { .cw-foot { padding: 0 16px 24px; } }
+.cw-notice { margin: 22px 32px; max-width: 720px; padding: 16px 18px; border-radius: 14px; border: 1px dashed var(--color-rule); font-size: 13.5px; line-height: 1.6; color: var(--color-text-secondary); }
+.cw-notice code { font-family: var(--font-hud); font-size: 12px; color: var(--color-text); }
+
+/* State glyphs */
+.cw-g { width: 14px; height: 14px; display: inline-grid; place-items: center; flex: none; }
+.cw-g-working::before { content: ''; width: 11px; height: 11px; border-radius: 999px; border: 1.6px solid var(--color-accent-subtle); border-top-color: var(--color-accent); border-right-color: var(--color-accent); animation: cw-spin 900ms linear infinite; }
+.cw-g-needs::before, .cw-g-blocked::before { content: '!'; width: 14px; height: 14px; border-radius: 999px; background: var(--color-accent-amber); color: var(--color-on-accent); font-size: 10px; font-weight: 550; display: grid; place-items: center; line-height: 1; }
+.cw-g-blocked::before { content: '–'; }
+.cw-g-done::before { content: ''; width: 7px; height: 7px; border-radius: 999px; background: var(--color-success); }
+.cw-g-quiet::before { content: ''; width: 7px; height: 7px; border-radius: 999px; border: 1.4px solid var(--color-text-tertiary); }
+.cw-g-paused::before { content: ''; width: 3px; height: 8px; border-left: 2px solid var(--color-text-tertiary); border-right: 2px solid var(--color-text-tertiary); }
+.cw-g-failed::before { content: '×'; font-size: 13px; line-height: 1; color: var(--color-text-secondary); }
+@keyframes cw-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .cw-g-working::before { animation: none; }
+}
