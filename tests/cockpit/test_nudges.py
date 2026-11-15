@@ -197,6 +197,36 @@ def test_digest_at_nine_and_five_once_each():
     assert len(msgs) == 1 and "UX audit" not in msgs[0]  # report already told
 
 
+def test_digest_names_quiet_tasks_only_up_to_a_week():
+    now_epoch = int(at(9, 5).timestamp())
+
+    def quiet(agent_id: str, days: float) -> dict:
+        return {
+            "id": agent_id,
+            "title": f"Task {agent_id}",
+            "kind": "ship",
+            "state": "quiet",
+            "last_activity": now_epoch - int(days * 86400),
+        }
+
+    agents = [quiet("new", 0.5), quiet("two", 2), quiet("six", 6.9)]
+    agents += [quiet("old", 8), quiet("older", 30)]
+    agents.append({**quiet("gone", 40), "closed": True})
+    text = digest_message(fleet(agents=agents), None, now_epoch)
+    assert text == (
+        "Crew digest: quiet for a day or more: Task two, Task six "
+        "y 2 tareas paradas desde hace más de una semana."
+    )
+    assert "Task old" not in text and "Task older" not in text
+
+    only_old = digest_message(
+        fleet(agents=[quiet("old", 8)]), None, now_epoch
+    )
+    assert only_old == (
+        "Crew digest: y 1 tareas paradas desde hace más de una semana."
+    )
+
+
 def test_missed_digest_is_skipped_not_sent_late():
     st = seeded()
     st.last_digest_slot = at(17, day=15).isoformat(timespec="minutes")

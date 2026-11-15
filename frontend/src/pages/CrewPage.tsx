@@ -107,28 +107,27 @@ export function CrewPage() {
             const a = fleet.agents.find((x) => x.id === id);
             if (!a) return null;
             return (
-              <button
-                key={id}
-                className="sn-tab"
-                role="tab"
-                data-active={tabs.current === id}
-                aria-selected={tabs.current === id}
-                onClick={() => setTabs((t) => openTab(t, id))}
-              >
-                <StateGlyph state={a.state} />
-                <span className="cw-tab-title">{a.title}</span>
-                <span
+              <span key={id} className="cw-tab-wrap" role="presentation">
+                <button
+                  className="sn-tab"
+                  role="tab"
+                  data-active={tabs.current === id}
+                  aria-selected={tabs.current === id}
+                  onClick={() => setTabs((t) => openTab(t, id))}
+                >
+                  <StateGlyph state={a.state} />
+                  <span className="cw-tab-title">{a.title}</span>
+                </button>
+                <button
+                  type="button"
                   className="cw-tab-x"
-                  role="button"
                   aria-label={`Close ${a.title}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setTabs((t) => closeTab(t, id));
-                  }}
+                  title={`Close ${a.title}`}
+                  onClick={() => setTabs((t) => closeTab(t, id))}
                 >
                   <X size={12} strokeWidth={1.8} />
-                </span>
-              </button>
+                </button>
+              </span>
             );
           })}
           <span className="cw-rail-right">

@@ -525,6 +525,73 @@ def test_build_fleet_states_waiting_backlog_and_finished(fm):
     assert fleet["finished"][1]["pr"]["number"] == 5
 
 
+def test_unchanged_files_are_not_read_again(fm, monkeypatch):
+    reads: list[str] = []
+    for name in ("transcript_start", "transcript_owner", "trim_transcript"):
+        real = getattr(feed, name)
+
+        def spy(*a, _real=real, _name=name, **kw):
+            reads.append(_name)
+            return _real(*a, **kw)
+
+        monkeypatch.setattr(feed, name, spy)
+    real_run = subprocess.run
+    git_calls: list[list[str]] = []
+
+    def run_spy(cmd, *a, **kw):
+        git_calls.append(list(cmd))
+        return real_run(cmd, *a, **kw)
+
+    monkeypatch.setattr(feed.subprocess, "run", run_spy)
+    cache = feed.FeedCache()
+    first = build_fleet(cfg_for(fm), now=NOW, cache=cache)
+    assert "trim_transcript" in reads and git_calls
+    reads.clear()
+    git_calls.clear()
+    second = build_fleet(cfg_for(fm), now=NOW + 5, cache=cache)
+    assert reads == [] and git_calls == []
+    assert second.transcripts["alpha"]["entries"] == first.transcripts["alpha"][
+        "entries"
+    ]
+    assert second.changes["alpha"]["files"] == first.changes["alpha"]["files"]
+
+    session = fm["projects"] / project_slug(str(fm["repo"])) / "sess.jsonl"
+    with open(session, "a") as fh:
+        fh.write(
+            jsonl(
+                {
+                    "type": "assistant",
+                    "timestamp": iso(fm["spawn"] + 40),
+                    "message": {"content": [{"type": "text", "text": "Later."}]},
+                }
+            )
+        )
+    _git(fm["repo"], "add", "new.txt")
+    third = build_fleet(cfg_for(fm), now=NOW + 10, cache=cache)
+    assert "trim_transcript" in reads and git_calls
+    texts = [e.get("text") for e in third.transcripts["alpha"]["entries"]]
+    assert "Later." in texts
+
+
+def test_closed_tasks_skip_transcript_and_git_reads(fm, monkeypatch):
+    backlog = fm["home"] / "data" / "backlog.md"
+    backlog.write_text(
+        backlog.read_text().replace(
+            "- [ ] alpha - Crew home", "- [x] alpha - Crew home"
+        )
+    )
+    monkeypatch.setattr(
+        feed, "trim_transcript", lambda *a, **k: pytest.fail("transcript read")
+    )
+    monkeypatch.setattr(
+        feed, "read_changes", lambda *a, **k: pytest.fail("git read")
+    )
+    res = build_fleet(cfg_for(fm), now=NOW)
+    alpha = {a["id"]: a for a in res.fleet["agents"]}["alpha"]
+    assert alpha["closed"] is True and alpha["has_transcript"] is False
+    assert "alpha" not in res.changes
+
+
 def test_in_flight_rows_without_an_agent_are_kept(fm):
     (fm["state"] / "gamma.meta").unlink()
     fleet = build_fleet(cfg_for(fm), now=NOW).fleet

@@ -37,6 +37,7 @@ CAPTAIN_CHANNEL = "captain"
 TICK_SECONDS = 30.0
 STALE_FLEET_SECONDS = 15 * 60
 QUIET_FOR_A_DAY = 24 * 60 * 60
+QUIET_FOR_A_WEEK = 7 * QUIET_FOR_A_DAY
 MESSAGE_CAP = 400
 
 
@@ -177,19 +178,26 @@ def digest_message(
             + ", ".join(_clip(a.get("title") or "", 50) for a in reports)
         )
 
-    quiet = [
-        a
+    idle = [
+        (now_epoch - a["last_activity"], a)
         for a in agents
         if a.get("state") == "quiet"
         and not a.get("closed")
         and a.get("last_activity")
         and now_epoch - a["last_activity"] >= QUIET_FOR_A_DAY
     ]
-    if quiet:
-        parts.append(
-            "quiet for a day or more: "
-            + ", ".join(_clip(a.get("title") or "", 50) for a in quiet)
-        )
+    quiet = [a for age, a in idle if age <= QUIET_FOR_A_WEEK]
+    stale = len(idle) - len(quiet)
+    if quiet or stale:
+        text = ""
+        if quiet:
+            text = "quiet for a day or more: " + ", ".join(
+                _clip(a.get("title") or "", 50) for a in quiet
+            )
+        if stale:
+            tail = f"{stale} tareas paradas desde hace más de una semana"
+            text = f"{text} y {tail}" if text else f"y {tail}"
+        parts.append(text)
 
     asks = [w for w in waiting if w.get("kind") in ("decision", "blocked")]
     if asks:

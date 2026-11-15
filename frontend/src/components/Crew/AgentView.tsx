@@ -14,6 +14,7 @@ import {
   spaceName,
 } from '../../lib/crew';
 import { fetchChanges, fetchTranscript } from '../../lib/crew-api';
+import { isNearBottom, shouldStickToBottom } from '../../lib/stick-bottom';
 import { StateGlyph } from './parts';
 
 type WorkTab = 'progress' | 'changes';
@@ -225,8 +226,17 @@ export function AgentPane({
   const [tab, setTab] = useState<WorkTab>(initialTab);
   const convoRef = useRef<HTMLDivElement>(null);
   const count = transcript?.entries.length ?? 0;
+  const stickRef = useRef(true);
+  const shownAgentRef = useRef<string | null>(null);
   useEffect(() => {
-    if (convoRef.current) convoRef.current.scrollTop = convoRef.current.scrollHeight;
+    const el = convoRef.current;
+    if (!el) return;
+    const subjectChanged = shownAgentRef.current !== agent.id;
+    shownAgentRef.current = agent.id;
+    if (shouldStickToBottom({ subjectChanged, wasNearBottom: stickRef.current })) {
+      el.scrollTop = el.scrollHeight;
+      stickRef.current = true;
+    }
   }, [agent.id, count]);
   const where = [spaceName(fleet, agent.space), `${agent.kind} task`].join(' · ');
   return (
@@ -242,7 +252,13 @@ export function AgentPane({
             </span>
           </span>
         </div>
-        <div className="cw-convo" ref={convoRef}>
+        <div
+          className="cw-convo"
+          ref={convoRef}
+          onScroll={(e) => {
+            stickRef.current = isNearBottom(e.currentTarget);
+          }}
+        >
           <Conversation agent={agent} fleet={fleet} transcript={transcript} nowMs={nowMs} />
         </div>
         <div className="cw-readonly">

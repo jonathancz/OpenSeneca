@@ -93,6 +93,7 @@ TRANSCRIPT_HEAD_BYTES = 1 * 1024 * 1024
 TRANSCRIPT_TAIL_BYTES = 6 * 1024 * 1024
 CHANGES_MAX_FILES = 200
 GIT_TIMEOUT = 10
+CHANGES_MAX_AGE = 5 * 60
 
 # Commands this feeder may run, and nothing else. A test asserts it.
 ALLOWED_COMMANDS = (
@@ -666,6 +667,109 @@ def transcript_owner(path: Path, state_dir: str) -> str | None:
     return best.decode(errors="replace")
 
 
+def _stat_key(path: Path) -> tuple[int, int] | None:
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    return (st.st_size, st.st_mtime_ns)
+
+
+def _git_dir(worktree: str) -> Path:
+    dot = Path(worktree) / ".git"
+    if dot.is_file():
+        text = read_text(dot, 4096).strip()
+        if text.startswith("gitdir:"):
+            target = Path(text[len("gitdir:") :].strip())
+            return target if target.is_absolute() else Path(worktree) / target
+    return dot
+
+
+def _git_signature(worktree: str) -> tuple:
+    gitdir = _git_dir(worktree)
+    return tuple(
+        _stat_key(gitdir / name) for name in ("HEAD", "index", "logs/HEAD")
+    )
+
+
+class FeedCache:
+    """Remembers transcript and git reads between rebuilds of one feeder.
+
+    A session file is read again only when its size or mtime changes; a
+    worktree's changes are read again when its HEAD, index or reflog change,
+    or after :data:`CHANGES_MAX_AGE` for edits that touch none of them.
+    Entries not used by the latest rebuild are dropped by :meth:`sweep`.
+    """
+
+    def __init__(self) -> None:
+        self._sessions: dict[str, tuple[tuple[int, int], dict[str, Any]]] = {}
+        self._changes: dict[
+            tuple[str, str | None], tuple[tuple, float, dict[str, Any] | None]
+        ] = {}
+        self._used_sessions: set[str] = set()
+        self._used_changes: set[tuple[str, str | None]] = set()
+
+    def _session(self, path: Path) -> dict[str, Any] | None:
+        name = str(path)
+        key = _stat_key(path)
+        if key is None:
+            self._sessions.pop(name, None)
+            return None
+        self._used_sessions.add(name)
+        hit = self._sessions.get(name)
+        if hit is not None and hit[0] == key:
+            return hit[1]
+        memo: dict[str, Any] = {}
+        self._sessions[name] = (key, memo)
+        return memo
+
+    def start(self, path: Path) -> float | None:
+        memo = self._session(path)
+        if memo is None:
+            return None
+        if "start" not in memo:
+            memo["start"] = transcript_start(path)
+        return memo["start"]
+
+    def owner(self, path: Path, state_dir: str) -> str | None:
+        memo = self._session(path)
+        if memo is None:
+            return None
+        slot = f"owner:{state_dir}"
+        if slot not in memo:
+            memo[slot] = transcript_owner(path, state_dir)
+        return memo[slot]
+
+    def entries(self, path: Path) -> list[dict[str, Any]]:
+        memo = self._session(path)
+        if memo is None:
+            return []
+        if "entries" not in memo:
+            memo["entries"] = trim_transcript(path)
+        return memo["entries"]
+
+    def changes(
+        self, worktree: str, branch: str | None, now: float
+    ) -> dict[str, Any] | None:
+        slot = (worktree, branch)
+        self._used_changes.add(slot)
+        sig = _git_signature(worktree)
+        hit = self._changes.get(slot)
+        if hit is not None and hit[0] == sig and 0 <= now - hit[1] < CHANGES_MAX_AGE:
+            return hit[2]
+        result = read_changes(worktree, branch)
+        self._changes[slot] = (sig, now, result)
+        return result
+
+    def sweep(self) -> None:
+        for name in set(self._sessions) - self._used_sessions:
+            del self._sessions[name]
+        for slot in set(self._changes) - self._used_changes:
+            del self._changes[slot]
+        self._used_sessions.clear()
+        self._used_changes.clear()
+
+
 def find_transcript(
     projects_dir: Path,
     worktree: str,
@@ -673,6 +777,7 @@ def find_transcript(
     *,
     task_id: str,
     state_dir: str,
+    cache: FeedCache | None = None,
 ) -> Path | None:
     """Newest Claude Code session for this worktree that belongs to the task.
 
@@ -682,6 +787,7 @@ def find_transcript(
     """
     if not worktree or spawned is None:
         return None
+    cache = cache if cache is not None else FeedCache()
     folder = projects_dir / project_slug(worktree)
     try:
         files = [p for p in folder.glob("*.jsonl") if p.is_file()]
@@ -692,12 +798,12 @@ def find_transcript(
         m = mtime(p)
         if m is None or m < spawned - 120:
             continue
-        start = transcript_start(p)
+        start = cache.start(p)
         if start is None or start < spawned - 120:
             continue
         candidates.append((start, p))
     for _start, p in sorted(candidates, key=lambda c: c[0], reverse=True):
-        if transcript_owner(p, state_dir) == task_id:
+        if cache.owner(p, state_dir) == task_id:
             return p
     return None
 
@@ -952,8 +1058,10 @@ def build_fleet(
     now: float | None = None,
     snapshot: dict[str, Any] | None = None,
     salt: bytes = b"cockpit",
+    cache: FeedCache | None = None,
 ) -> FeedResult:
     now = time.time() if now is None else now
+    cache = cache if cache is not None else FeedCache()
     tz_name = cfg.tz_name or local_tz_name()
     tz = _load_tz(tz_name)
     privacy = Privacy(cfg.client_patterns, salt)
@@ -1014,19 +1122,22 @@ def build_fleet(
             open_decisions = snap_row["open"]
             state_source = "snapshot"
 
+        closed = row is not None and (row.checked or row.section == "done")
+
         # The agent's own conversation, trimmed (own projects only).
         transcript_path = None
-        if not client and cfg.claude_projects is not None:
+        if not client and not closed and cfg.claude_projects is not None:
             transcript_path = find_transcript(
                 cfg.claude_projects,
                 meta.get("worktree", ""),
                 spawned,
                 task_id=task_id,
                 state_dir=str(state_dir),
+                cache=cache,
             )
         entries: list[dict[str, Any]] = []
         if transcript_path is not None:
-            entries = trim_transcript(transcript_path)
+            entries = cache.entries(transcript_path)
 
         times = [t for t in (status_mtime, busy.get("ts")) if t]
         times += [e["at"] for e in entries[-5:] if e.get("at")]
@@ -1050,7 +1161,6 @@ def build_fleet(
             state = last_event.verb
         else:
             state = "quiet"
-        closed = row is not None and (row.checked or row.section == "done")
         if closed and state in ("working", "quiet", "paused"):
             state = "done"
 
@@ -1084,11 +1194,12 @@ def build_fleet(
         diff = None
         if (
             not client
+            and not closed
             and cfg.read_git
             and meta.get("branch")
             and not meta.get("stale_worktree_reused_by_other_task")
         ):
-            ch = read_changes(meta.get("worktree", ""), meta.get("branch"))
+            ch = cache.changes(meta.get("worktree", ""), meta.get("branch"), now)
             if ch is not None:
                 changes[public_id] = {
                     "schema": CHANGES_SCHEMA,
@@ -1288,6 +1399,7 @@ def build_fleet(
         "queued_total": len(queued),
         "finished": finished,
     }
+    cache.sweep()
     return FeedResult(fleet=fleet, transcripts=transcripts, changes=changes)
 
 
@@ -1462,6 +1574,7 @@ def run(cfg: FeedConfig, args: argparse.Namespace) -> int:
     cfg.out_dir.mkdir(parents=True, exist_ok=True)
     salt = load_salt(Path(args.salt_file).expanduser(), legacy_out_dir=cfg.out_dir)
     previous: dict[str, bytes] = {}
+    cache = FeedCache()
     poller = None
     if not args.no_snapshot and not args.once:
         poller = SnapshotPoller(cfg.fm_home, args.snapshot_every, args.snapshot_retry)
@@ -1474,7 +1587,9 @@ def run(cfg: FeedConfig, args: argparse.Namespace) -> int:
         elif poller is not None:
             snapshot = poller.latest(max_age=args.snapshot_every * 2)
         write_outputs(
-            cfg.out_dir, build_fleet(cfg, snapshot=snapshot, salt=salt), previous
+            cfg.out_dir,
+            build_fleet(cfg, snapshot=snapshot, salt=salt, cache=cache),
+            previous,
         )
 
     if args.once:
