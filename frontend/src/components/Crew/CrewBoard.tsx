@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowUpRight, Lock } from 'lucide-react';
+import { ArrowUpRight, Lock, MessageCircle } from 'lucide-react';
 import {
   type BoardCard,
   type BoardColumn,
@@ -15,10 +15,44 @@ import { StateGlyph } from './parts';
 
 const SHOWN = 8;
 
-function Card({ card, column, nowMs }: { card: BoardCard; column: BoardColumn['id']; nowMs: number }) {
+export type OpenAgent = (agentId: string) => void;
+
+function Card({
+  card,
+  column,
+  nowMs,
+  onOpen,
+}: {
+  card: BoardCard;
+  column: BoardColumn['id'];
+  nowMs: number;
+  onOpen?: OpenAgent;
+}) {
   const age = column === 'finished' ? 'today' : formatAge(ageOf(card.since, nowMs));
+  const opens = Boolean(onOpen && card.agentId);
+  const open = () => {
+    if (onOpen && card.agentId) onOpen(card.agentId);
+  };
   return (
-    <article className="cw-card" data-glyph={card.glyph} aria-label={`${card.title}, ${card.project}, ${card.stateLabel}`}>
+    <article
+      className="cw-card"
+      data-glyph={card.glyph}
+      data-opens={opens}
+      aria-label={`${card.title}, ${card.project}, ${card.stateLabel}`}
+      role={opens ? 'button' : undefined}
+      tabIndex={opens ? 0 : undefined}
+      onClick={opens ? open : undefined}
+      onKeyDown={
+        opens
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                open();
+              }
+            }
+          : undefined
+      }
+    >
       <div className="cw-card-top">
         <span className="cw-avatar" aria-hidden="true">
           {card.project.slice(0, 1).toUpperCase()}
@@ -38,7 +72,13 @@ function Card({ card, column, nowMs }: { card: BoardCard; column: BoardColumn['i
           {card.stateLabel}
         </span>
         {card.link && (
-          <a className="cw-link" href={card.link.url} target="_blank" rel="noreferrer noopener">
+          <a
+            className="cw-link"
+            href={card.link.url}
+            target="_blank"
+            rel="noreferrer noopener"
+            onClick={(e) => e.stopPropagation()}
+          >
             {card.link.label}
             <ArrowUpRight size={12} strokeWidth={1.6} />
           </a>
@@ -48,7 +88,7 @@ function Card({ card, column, nowMs }: { card: BoardCard; column: BoardColumn['i
   );
 }
 
-function Column({ column, nowMs }: { column: BoardColumn; nowMs: number }) {
+function Column({ column, nowMs, onOpen }: { column: BoardColumn; nowMs: number; onOpen?: OpenAgent }) {
   const [all, setAll] = useState(false);
   const cards = all ? column.cards : column.cards.slice(0, SHOWN);
   const hidden = column.cards.length - cards.length;
@@ -64,7 +104,7 @@ function Column({ column, nowMs }: { column: BoardColumn; nowMs: number }) {
       <div className="cw-cards">
         {cards.length === 0 && <div className="cw-empty">{EMPTY[column.id]}</div>}
         {cards.map((c) => (
-          <Card key={c.id} card={c} column={column.id} nowMs={nowMs} />
+          <Card key={c.id} card={c} column={column.id} nowMs={nowMs} onOpen={onOpen} />
         ))}
         {hidden > 0 && (
           <button className="cw-more" onClick={() => setAll(true)}>
@@ -93,7 +133,7 @@ const EMPTY: Record<BoardColumn['id'], string> = {
   stalled: 'Nothing has stalled.',
 };
 
-function Stalled({ column, nowMs }: { column: BoardColumn; nowMs: number }) {
+function Stalled({ column, nowMs, onOpen }: { column: BoardColumn; nowMs: number; onOpen?: OpenAgent }) {
   if (column.total === 0) return null;
   return (
     <details className="cw-stalled" aria-label={column.title}>
@@ -106,7 +146,7 @@ function Stalled({ column, nowMs }: { column: BoardColumn; nowMs: number }) {
       </summary>
       <div className="cw-stalled-cards">
         {column.cards.map((c) => (
-          <Card key={c.id} card={c} column={column.id} nowMs={nowMs} />
+          <Card key={c.id} card={c} column={column.id} nowMs={nowMs} onOpen={onOpen} />
         ))}
       </div>
     </details>
@@ -118,11 +158,17 @@ export function CrewBoard({
   nowMs,
   ageSeconds,
   stale,
+  nudgeLine,
+  onOpen,
 }: {
   fleet: CrewFleet;
   nowMs: number;
   ageSeconds: number | null;
   stale: boolean;
+  /** How Discord nudges stand, for the meta line. */
+  nudgeLine?: string | null;
+  /** Opens an agent's tab; cards without an agent stay plain. */
+  onOpen?: OpenAgent;
 }) {
   const { columns, stalled } = boardView(fleet, nowMs);
   const lede = ledeSentence(fleet, nowMs);
@@ -139,6 +185,12 @@ export function CrewBoard({
               ? `Read ${formatAge(ageSeconds)} ago; the feeder may have stopped`
               : `Read ${formatAge(ageSeconds)} ago from firstmate${fleet.source === 'snapshot' ? "'s snapshot" : "'s records"}`}
           </span>
+          {nudgeLine && (
+            <span>
+              <MessageCircle size={13} strokeWidth={1.6} />
+              {nudgeLine}
+            </span>
+          )}
           <span>
             <Lock size={13} strokeWidth={1.6} />
             Read only. Decisions and merges happen in Claude Code.
@@ -147,10 +199,10 @@ export function CrewBoard({
       </div>
       <div className="cw-board">
         {columns.map((c) => (
-          <Column key={c.id} column={c} nowMs={nowMs} />
+          <Column key={c.id} column={c} nowMs={nowMs} onOpen={onOpen} />
         ))}
       </div>
-      <Stalled column={stalled} nowMs={nowMs} />
+      <Stalled column={stalled} nowMs={nowMs} onOpen={onOpen} />
       <p className="cw-foot">
         Times show how long since each task's last activity. Client projects show their name and state only.
       </p>

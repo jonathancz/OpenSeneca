@@ -81,7 +81,7 @@ function useResearchCorpusSync(enabled: boolean): {
   return state;
 }
 
-export function InputArea() {
+export function InputArea({ compact = false }: { compact?: boolean } = {}) {
   const [input, setInput] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -574,7 +574,7 @@ export function InputArea() {
   };
 
   return (
-    <div className="px-6 pb-6 pt-3" style={{ maxWidth: 'calc(var(--chat-max-width) + 48px)', margin: '0 auto', width: '100%' }}>
+    <div className={compact ? 'px-3 pb-3 pt-2' : 'px-6 pb-6 pt-3'} style={{ maxWidth: 'calc(var(--chat-max-width) + 48px)', margin: '0 auto', width: '100%' }}>
       <div className="mb-3 flex flex-col gap-1.5">
         <div className="flex items-center gap-2">
           <button
