@@ -46,6 +46,9 @@ standard library only).
   lives in `~/.local/state/openseneca/cockpit.salt` (`--salt-file`), outside
   the mounted folder.
 
+It watches with a cheap `stat` scan every 5 s, debounces changes for 2 s, and
+rewrites the fleet at least once a minute, all under `nice -n 19`.
+
 ## Live terminal mirror
 
 The feeder decides on its own which panes to mirror; Seneca sends it nothing
@@ -56,9 +59,6 @@ with `tmux capture-pane -p -e` (printed to stdout, never into a tmux buffer),
 and writes `terminals/<id>.json`, secrets redacted. Nothing else ever reaches
 tmux: no `send-keys`, no attach, no resize. Client projects are never
 mirrored. `--no-terminals` turns the mirror off.
-
-It watches with a cheap `stat` scan every 5 s, debounces changes for 2 s, and
-rewrites the fleet at least once a minute, all under `nice -n 19`.
 
 ## Run it
 
