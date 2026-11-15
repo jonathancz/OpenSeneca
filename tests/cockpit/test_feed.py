@@ -742,6 +742,7 @@ def test_feed_run_leaves_firstmate_home_untouched(fm):
             str(fm["out"].parent / "state" / "cockpit.salt"),
             "--once",
             "--no-snapshot",
+            "--no-github",
         ]
     )
     assert feed.run(feed.config_from_args(args), args) == 0
@@ -788,3 +789,109 @@ def test_write_fleet_skips_unchanged_content(fm):
     (fm["state"] / "alpha.status").write_text("done: finished\n")
     assert write_fleet(fm["out"], build_fleet(cfg_for(fm), now=NOW + 2), previous)
     assert not list(fm["out"].glob(".fleet.json.*"))
+
+
+# ---------------------------------------------------------------------------
+# Merged PRs finish a task even when its backlog row stayed open
+# ---------------------------------------------------------------------------
+
+
+def _mark_merged(state: Path, task_id: str, when: float) -> None:
+    marker = state / f"{task_id}.pr-poll-merge-notified"
+    marker.write_text("fm-pr-poll-merge-notified-v1\ngithub\ngithub.com\no/r\n7\n")
+    os.utime(marker, (when, when))
+
+
+def _settle(fm: dict, task_id: str = "alpha") -> None:
+    """Make a task done and idle, with its decision answered."""
+    (fm["state"] / f"{task_id}.status").write_text(
+        f"done [at={fm['spawn'] + 900}]: PR https://github.com/o/r/pull/7 opened\n"
+    )
+
+
+def test_firstmate_merge_record_finishes_the_task(fm):
+    _settle(fm)
+    _mark_merged(fm["state"], "alpha", NOW - 600)  # 00:16 on 15 Nov in Paris
+    fleet = build_fleet(cfg_for(fm), now=NOW).fleet
+    alpha = {a["id"]: a for a in fleet["agents"]}["alpha"]
+    assert alpha["closed"] is True and alpha["state"] == "done"
+    done = next(f for f in fleet["finished"] if f["id"] == "alpha")
+    assert done["done_on"] == "2026-11-15" and done["pr"]["number"] == 7
+    # A week later it leaves the board.
+    later = build_fleet(cfg_for(fm), now=NOW + 8 * DAY).fleet
+    assert "alpha" not in {a["id"] for a in later["agents"]}
+    assert "alpha" not in {f["id"] for f in later["finished"]}
+
+
+def test_a_working_agent_is_not_finished_by_an_old_merge(fm):
+    (fm["state"] / "alpha.status").write_text("working: next slice\n")
+    (fm["state"] / "alpha.busy-state").write_text(f"v1 state=busy ts={NOW - 60}\n")
+    _mark_merged(fm["state"], "alpha", NOW - 3600)
+    alpha = {a["id"]: a for a in build_fleet(cfg_for(fm), now=NOW).fleet["agents"]}[
+        "alpha"
+    ]
+    assert alpha["state"] == "working" and alpha["closed"] is False
+
+
+def test_github_is_asked_once_and_cached(fm):
+    _settle(fm)
+    calls: list[str] = []
+
+    def fetch(url):
+        calls.append(url)
+        return {"state": "MERGED", "merged_at": NOW - 7200}
+
+    cfg = cfg_for(fm)
+    cfg.github = feed.PrStates(fetch=fetch)
+    fleet = build_fleet(cfg, now=NOW).fleet
+    assert {a["id"]: a for a in fleet["agents"]}["alpha"]["closed"] is True
+    build_fleet(cfg, now=NOW + 5)
+    build_fleet(cfg, now=NOW + 5 * 3600)
+    assert calls == ["https://github.com/o/r/pull/7"]
+
+
+def test_open_pr_states_expire_after_half_an_hour():
+    calls: list[str] = []
+
+    def fetch(url):
+        calls.append(url)
+        return {"state": "OPEN", "merged_at": None}
+
+    states = feed.PrStates(fetch=fetch)
+    url = "https://github.com/o/r/pull/1"
+    states.state(url, 0)
+    states.state(url, 60)
+    assert len(calls) == 1
+    states.state(url, 31 * 60)
+    assert len(calls) == 2
+
+
+def test_gh_is_called_read_only(tmp_path, monkeypatch):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    gh = bin_dir / "gh"
+    gh.write_text(
+        '#!/bin/sh\necho "$@" > "$GH_LOG"\n'
+        'echo \'{"state":"MERGED","mergedAt":"2026-11-14T10:00:00Z"}\'\n'
+    )
+    gh.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("GH_LOG", str(tmp_path / "gh.log"))
+    st = feed.gh_pr_state("https://github.com/o/r/pull/7")
+    assert st is not None and st["state"] == "MERGED" and st["merged_at"] > 0
+    assert (tmp_path / "gh.log").read_text().split() == [
+        "pr",
+        "view",
+        "https://github.com/o/r/pull/7",
+        "--json",
+        "state,mergedAt",
+    ]
+    assert feed.gh_pr_state("https://bitbucket.org/o/r/pull-requests/1") is None
+
+
+def test_backlog_merged_date_counts_as_done():
+    rows = feed.parse_backlog(
+        "## Done\n- [x] t - Move the key https://github.com/o/r/pull/126 "
+        "(repo: r) (kind: ship) (merged 2026-11-15)\n"
+    )
+    assert rows[0].done == "2026-11-15" and rows[0].title.endswith("pull/126")

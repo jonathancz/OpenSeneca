@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { apiFetch, getBase } from './api';
 import { buildWsProtocols } from './useAgentEvents';
-import type { CrewChanges, CrewTranscript, FleetResponse, NudgeStatus } from './crew';
+import type { CrewChanges, CrewTerminal, CrewTranscript, FleetResponse, NudgeStatus } from './crew';
 import type { LiveSocket } from './crew-live';
 
 /*
@@ -24,6 +24,10 @@ export const fetchChanges = (id: string) =>
   getJson<CrewChanges>(`/v1/cockpit/agents/${encodeURIComponent(id)}/changes`);
 
 export const fetchNudges = () => getJson<NudgeStatus>('/v1/cockpit/nudges');
+
+/** The latest view only capture of an agent's terminal; asking keeps it coming. */
+export const fetchTerminal = (id: string) =>
+  getJson<CrewTerminal>(`/v1/cockpit/agents/${encodeURIComponent(id)}/terminal`);
 
 export function crewLiveUrl(): string {
   const base = getBase();

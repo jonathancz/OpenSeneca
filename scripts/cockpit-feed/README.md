@@ -4,7 +4,9 @@ Seneca's Crew page shows what the coding crew is doing: Queued, In progress,
 Ready for review, Waiting on you and Finished today, with work untouched for
 over a day folded into a collapsed Stalled group. A card opens its agent as a
 tab: the agent's trimmed conversation, its progress, and the files its branch
-changed. Seneca's chat sits docked on the right. The data comes from
+changed, with a Live toggle that mirrors the agent's terminal, view only. Two
+agent tabs can sit side by side (Split). Seneca's chat sits docked on the
+right. The data comes from
 firstmate's own records, read on the host by
 [`src/openjarvis/cockpit/feed.py`](../../src/openjarvis/cockpit/feed.py) (Python
 standard library only).
@@ -28,6 +30,12 @@ standard library only).
 * Runs `git status` and `git diff --numstat` against main in each ship task's
   worktree, with optional locks off so not even the index is refreshed, and
   only while the worktree is still on the task's branch. `--no-git` skips it.
+* Asks GitHub, read only, whether a task's PR merged (`gh pr view <url>
+  --json state,mergedAt`), only when firstmate's own merge record
+  (`state/<id>.pr-poll-merge-notified`) does not already say so; answers are
+  cached (merged or closed forever, open for 30 minutes). `--no-github` skips
+  it. A task whose PR merged counts as finished and leaves the board seven
+  days later.
 * Writes `fleet.json`, `transcripts/<id>.json` and `changes/<id>.json`
   (atomically, only when they changed) in `OPENSENECA_COCKPIT_DIR`, default
   `~/.local/share/openseneca/cockpit`. It refuses an output folder inside the
@@ -37,6 +45,19 @@ standard library only).
   status text, branch, PR, transcript or changes. The salt behind those ids
   lives in `~/.local/state/openseneca/cockpit.salt` (`--salt-file`), outside
   the mounted folder.
+
+## Live terminal mirror
+
+While an agent's Live view is open in a browser, Seneca touches an empty file
+named after the agent in `OPENSENECA_COCKPIT_DEMAND_DIR` (default
+`~/.local/share/openseneca/cockpit-demand`, created with mode 1733 so the
+container's user can add entries but not list or remove others). The feeder
+captures only those agents' panes, about every 2 s, with
+`tmux capture-pane -p -e` (printed to stdout, never into a tmux buffer), and
+writes `terminals/<id>.json`, secrets redacted. Nothing else ever reaches
+tmux: no `send-keys`, no attach, no resize. Client projects are never
+mirrored. Closing the view stops the captures within 15 s. `--no-terminals`
+turns the mirror off.
 
 It watches with a cheap `stat` scan every 5 s, debounces changes for 2 s, and
 rewrites the fleet at least once a minute, all under `nice -n 19`.
@@ -73,8 +94,10 @@ All cockpit routes are GETs, plus one push only WebSocket; decisions and
 merges stay in Claude Code.
 
 * `GET /v1/cockpit/fleet`, `GET /v1/cockpit/agents/{id}/transcript`,
-  `GET /v1/cockpit/agents/{id}/changes`, and `GET /v1/cockpit/nudges` (the
-  nudge rules and whether the Discord channel is ready).
+  `GET /v1/cockpit/agents/{id}/changes`, `GET /v1/cockpit/agents/{id}/terminal`
+  (the latest mirror capture; asking for it is what keeps captures coming),
+  and `GET /v1/cockpit/nudges` (the nudge rules and whether the Discord
+  channel is ready).
 * `/v1/cockpit/live` tells the browser when `fleet.json` changed.
 
 ## Discord nudges

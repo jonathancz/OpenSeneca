@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { FileText, Lock, Terminal } from 'lucide-react';
+import { parseAnsi } from '../../lib/ansi';
+import { startTerminalPoll } from '../../lib/terminal-poll';
 import {
   type CrewAgent,
   type CrewChanges,
   type CrewFleet,
+  type CrewTerminal,
   type CrewTranscript,
   STATE_LABEL,
   agoLabel,
@@ -13,11 +16,12 @@ import {
   progressSteps,
   spaceName,
 } from '../../lib/crew';
-import { fetchChanges, fetchTranscript } from '../../lib/crew-api';
+import { fetchChanges, fetchTerminal, fetchTranscript } from '../../lib/crew-api';
 import { isNearBottom, shouldStickToBottom } from '../../lib/stick-bottom';
 import { StateGlyph } from './parts';
 
 type WorkTab = 'progress' | 'changes';
+export type PaneView = 'conversation' | 'live';
 
 function when(at: number | null | undefined, fleet: CrewFleet, nowMs: number): string {
   if (at == null) return '';
@@ -207,6 +211,72 @@ function Changes({ agent, changes }: { agent: CrewAgent; changes: CrewChanges | 
   );
 }
 
+/** A captured terminal, coloured as the agent sees it. Pure, for tests. */
+export function LiveTerminal({ terminal }: { terminal: CrewTerminal | null }) {
+  if (!terminal) return <p className="cw-muted">Connecting to the live terminal…</p>;
+  if (!terminal.available || !terminal.lines) {
+    return <p className="cw-muted">{terminal.reason ?? 'No live terminal right now.'}</p>;
+  }
+  return (
+    <pre className="cw-term" aria-label="Live terminal, view only">
+      {parseAnsi(terminal.lines).map((runs, i) => (
+        <div key={i} className="cw-term-line">
+          {runs.length === 0
+            ? ' '
+            : runs.map((r, j) => {
+                const fg = r.inverse ? r.bg ?? 'var(--color-bg)' : r.fg;
+                const bg = r.inverse ? r.fg ?? 'var(--color-text)' : r.bg;
+                return (
+                  <span
+                    key={j}
+                    style={{
+                      color: fg,
+                      background: bg,
+                      fontWeight: r.bold ? 600 : undefined,
+                      opacity: r.dim ? 0.65 : undefined,
+                      fontStyle: r.italic ? 'italic' : undefined,
+                      textDecoration: r.underline ? 'underline' : undefined,
+                    }}
+                  >
+                    {r.text}
+                  </span>
+                );
+              })}
+        </div>
+      ))}
+    </pre>
+  );
+}
+
+/** Polls the mirror every two seconds while shown; closing it stops the captures. */
+function LivePane({ agent }: { agent: CrewAgent }) {
+  const [terminal, setTerminal] = useState<CrewTerminal | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const stick = useRef(true);
+  useEffect(
+    () =>
+      startTerminalPoll({
+        fetch: () => fetchTerminal(agent.id),
+        onData: (t) => {
+          stick.current = ref.current ? isNearBottom(ref.current) : true;
+          setTerminal(t);
+        },
+        onError: () => setTerminal({ available: false, reason: 'Cannot reach the live terminal right now.' }),
+      }),
+    [agent.id],
+  );
+  const lines = terminal?.lines?.length ?? 0;
+  const captured = terminal?.captured_at;
+  useEffect(() => {
+    if (stick.current && ref.current) ref.current.scrollTop = ref.current.scrollHeight;
+  }, [lines, captured]);
+  return (
+    <div className="cw-convo cw-live" ref={ref}>
+      <LiveTerminal terminal={terminal} />
+    </div>
+  );
+}
+
 /** The agent tab without data loading, so it renders in tests. */
 export function AgentPane({
   agent,
@@ -215,6 +285,8 @@ export function AgentPane({
   transcript,
   changes,
   initialTab = 'progress',
+  initialView = 'conversation',
+  compact = false,
 }: {
   agent: CrewAgent;
   fleet: CrewFleet;
@@ -222,51 +294,74 @@ export function AgentPane({
   transcript: CrewTranscript | null;
   changes: CrewChanges | null;
   initialTab?: WorkTab;
+  initialView?: PaneView;
+  /** Split view: the pane only, no Progress and Changes panel. */
+  compact?: boolean;
 }) {
   const [tab, setTab] = useState<WorkTab>(initialTab);
+  const canLive = !agent.client && Boolean(agent.window);
+  const [view, setView] = useState<PaneView>(canLive ? initialView : 'conversation');
   const convoRef = useRef<HTMLDivElement>(null);
   const count = transcript?.entries.length ?? 0;
   const stickRef = useRef(true);
-  const shownAgentRef = useRef<string | null>(null);
+  const shownRef = useRef<string | null>(null);
+  // Follow new messages only while the reader is at the bottom; a new agent
+  // or a switch back from Live starts at the bottom.
   useEffect(() => {
     const el = convoRef.current;
     if (!el) return;
-    const subjectChanged = shownAgentRef.current !== agent.id;
-    shownAgentRef.current = agent.id;
+    const subject = `${agent.id}:${view}`;
+    const subjectChanged = shownRef.current !== subject;
+    shownRef.current = subject;
     if (shouldStickToBottom({ subjectChanged, wasNearBottom: stickRef.current })) {
       el.scrollTop = el.scrollHeight;
       stickRef.current = true;
     }
-  }, [agent.id, count]);
+  }, [agent.id, count, view]);
   const where = [spaceName(fleet, agent.space), `${agent.kind} task`].join(' · ');
   return (
-    <div className="cw-panes">
+    <div className="cw-panes" data-compact={compact}>
       <section className="cw-pane" aria-label={agent.title}>
         <div className="cw-pane-head">
           <StateGlyph state={agent.state} />
           <span>{agent.title}</span>
           <span className="cw-where">{where}</span>
           <span className="cw-end">
+            {canLive && (
+              <span className="cw-seg" role="group" aria-label="Show">
+                <button aria-pressed={view === 'conversation'} onClick={() => setView('conversation')}>
+                  Conversation
+                </button>
+                <button aria-pressed={view === 'live'} onClick={() => setView('live')}>
+                  Live
+                </button>
+              </span>
+            )}
             <span className="cw-pill-state">
               {STATE_LABEL[agent.state]} · {agoLabel(agent.last_activity, nowMs) || 'unknown'}
             </span>
           </span>
         </div>
-        <div
-          className="cw-convo"
-          ref={convoRef}
-          onScroll={(e) => {
-            stickRef.current = isNearBottom(e.currentTarget);
-          }}
-        >
-          <Conversation agent={agent} fleet={fleet} transcript={transcript} nowMs={nowMs} />
-        </div>
+        {view === 'live' ? (
+          <LivePane agent={agent} />
+        ) : (
+          <div
+            className="cw-convo"
+            ref={convoRef}
+            onScroll={(e) => {
+              stickRef.current = isNearBottom(e.currentTarget);
+            }}
+          >
+            <Conversation agent={agent} fleet={fleet} transcript={transcript} nowMs={nowMs} />
+          </div>
+        )}
         <div className="cw-readonly">
           <Lock size={15} strokeWidth={1.6} />
           <span>Read only. Answer and steer in Claude Code, where firstmate supervises this agent.</span>
           {agent.window && <span className="cw-mono">{agent.window}</span>}
         </div>
       </section>
+      {!compact && (
       <section className="cw-workpanel" aria-label="Progress and changes">
         <div className="cw-worktabs" role="tablist">
           <button className="sn-tab" role="tab" data-active={tab === 'progress'} aria-selected={tab === 'progress'} onClick={() => setTab('progress')}>
@@ -285,12 +380,23 @@ export function AgentPane({
           )}
         </div>
       </section>
+      )}
     </div>
   );
 }
 
 /** An agent tab: loads the trimmed conversation and changes, again when the fleet moves. */
-export function AgentView({ agent, fleet, nowMs }: { agent: CrewAgent; fleet: CrewFleet; nowMs: number }) {
+export function AgentView({
+  agent,
+  fleet,
+  nowMs,
+  compact = false,
+}: {
+  agent: CrewAgent;
+  fleet: CrewFleet;
+  nowMs: number;
+  compact?: boolean;
+}) {
   const [transcript, setTranscript] = useState<CrewTranscript | null>(null);
   const [changes, setChanges] = useState<CrewChanges | null>(null);
   const version = fleet.version;
@@ -311,5 +417,7 @@ export function AgentView({ agent, fleet, nowMs }: { agent: CrewAgent; fleet: Cr
       cancelled = true;
     };
   }, [agent.id, agent.client, agent.diff, version]);
-  return <AgentPane agent={agent} fleet={fleet} nowMs={nowMs} transcript={transcript} changes={changes} />;
+  return (
+    <AgentPane agent={agent} fleet={fleet} nowMs={nowMs} transcript={transcript} changes={changes} compact={compact} />
+  );
 }

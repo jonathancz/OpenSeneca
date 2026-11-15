@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { AgentPane } from './AgentView';
+import { AgentPane, LiveTerminal } from './AgentView';
 import type { CrewAgent, CrewChanges, CrewFleet, CrewTranscript } from '../../lib/crew';
 
 const NOW = Date.UTC(2026, 10, 14, 8, 50) / 1000;
@@ -126,5 +126,37 @@ describe('AgentPane', () => {
     expect(html).toContain('Client project: only its name and state are shown here.');
     expect(html).toContain('Not shown for client projects.');
     expect(html).not.toContain('Build the MCP endpoint.');
+  });
+});
+
+describe('live terminal', () => {
+  it('offers Live only for own projects with a tmux window, and starts on the conversation', () => {
+    const html = render(agent);
+    expect(html).toContain('>Live</button>');
+    expect(html).toContain('aria-pressed="true">Conversation</button>');
+    expect(render({ ...agent, window: null })).not.toContain('>Live</button>');
+    expect(render({ ...agent, client: true, window: null }, 'progress', null)).not.toContain('>Live</button>');
+  });
+
+  it('draws the captured pane with its colours, view only', () => {
+    const html = renderToStaticMarkup(
+      <LiveTerminal terminal={{ available: true, captured_at: NOW, lines: ['\x1b[32mok\x1b[0m done', ''] }} />,
+    );
+    expect(html).toContain('aria-label="Live terminal, view only"');
+    expect(html).toMatch(/<span style="color:#6cc48c">ok<\/span>/);
+    expect(html).toContain(' done');
+    expect(html).not.toMatch(/<(input|textarea)/);
+    expect(renderToStaticMarkup(<LiveTerminal terminal={null} />)).toContain('Connecting to the live terminal');
+    expect(
+      renderToStaticMarkup(<LiveTerminal terminal={{ available: false, reason: 'Waiting for the first capture from the feeder.' }} />),
+    ).toContain('Waiting for the first capture');
+  });
+
+  it('drops the side panel in split view', () => {
+    const html = renderToStaticMarkup(
+      <AgentPane agent={agent} fleet={fleet} nowMs={NOW * 1000} transcript={transcript} changes={changes} compact />,
+    );
+    expect(html).toContain('data-compact="true"');
+    expect(html).not.toContain('aria-label="Progress and changes"');
   });
 });
