@@ -1,7 +1,8 @@
 # Crew cockpit feeder
 
 Seneca's Crew page shows what the coding crew is doing: Queued, In progress,
-Ready for review, Waiting on you and Finished today. The data comes from
+Ready for review, Waiting on you and Finished today, with work untouched for
+over a day folded into a collapsed Stalled group. The data comes from
 firstmate's own records, read on the host by
 [`src/openjarvis/cockpit/feed.py`](../../src/openjarvis/cockpit/feed.py) (Python
 standard library only).
