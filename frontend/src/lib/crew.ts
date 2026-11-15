@@ -158,6 +158,15 @@ export interface CrewChanges {
   removed: number;
 }
 
+/** A view only capture of an agent's tmux pane (lines keep ANSI colours). */
+export interface CrewTerminal {
+  available: boolean;
+  reason?: string;
+  captured_at?: number;
+  window?: string;
+  lines?: string[];
+}
+
 export interface NudgeStatus {
   enabled: boolean;
   channel_ready: boolean;

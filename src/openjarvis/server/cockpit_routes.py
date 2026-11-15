@@ -1,10 +1,11 @@
 """Crew cockpit API: read only views of the folder the host feeder writes.
 
 The feeder (``openjarvis.cockpit.feed``) runs on the host and writes
-``fleet.json``, ``transcripts/<id>.json`` and ``changes/<id>.json`` into a
-folder that this server only reads. In Docker the folder is mounted read only
-(``deploy/docker/docker-compose.cockpit.yml``) and its path given in
-``OPENJARVIS_COCKPIT_DIR``; otherwise it is ``<data dir>/cockpit``.
+``fleet.json``, ``transcripts/<id>.json``, ``changes/<id>.json`` and
+``terminals/<id>.json`` into a folder that this server only reads. In Docker
+the folder is mounted read only (``deploy/docker/docker-compose.cockpit.yml``)
+and its path given in ``OPENJARVIS_COCKPIT_DIR``; otherwise it is
+``<data dir>/cockpit``.
 
 Every HTTP route here is a GET. Nothing in this module can reach firstmate,
 tmux, git or GitHub: the cockpit is read only toward the crew, and decisions
@@ -34,6 +35,8 @@ from openjarvis.cockpit.nudges import CAPTAIN_CHANNEL, NudgeRunner
 logger = logging.getLogger(__name__)
 
 COCKPIT_DIR_ENV = "OPENJARVIS_COCKPIT_DIR"
+# A capture older than this is not shown as live.
+TERMINAL_FRESH_SECONDS = 30
 NUDGES_ENV = "OPENJARVIS_COCKPIT_NUDGES"
 STALE_SECONDS = 5 * 60
 LIVE_CHECK_SECONDS = 2.0
@@ -111,6 +114,32 @@ def get_transcript(agent_id: str, request: Request) -> dict[str, Any]:
 @router.get("/agents/{agent_id}/changes")
 def get_changes(agent_id: str, request: Request) -> dict[str, Any]:
     return _agent_file(request, "changes", agent_id)
+
+
+@router.get("/agents/{agent_id}/terminal")
+def get_terminal(agent_id: str, request: Request) -> dict[str, Any]:
+    """The latest view only capture of an agent's terminal.
+
+    Only reads ``terminals/<id>.json``: the host feeder decides on its own
+    which live agents to capture. Client projects have no mirror.
+    """
+    if not _ID.match(agent_id) or ".." in agent_id:
+        raise HTTPException(status_code=404, detail="unknown agent")
+    fleet = _read_json(_dir(request) / "fleet.json") or {}
+    agent = next(
+        (a for a in fleet.get("agents") or [] if a.get("id") == agent_id), None
+    )
+    if agent is None or agent.get("client") or not agent.get("window"):
+        raise HTTPException(status_code=404, detail="no live mirror for this agent")
+    data = _read_json(_dir(request) / "terminals" / f"{agent_id}.json")
+    captured = float((data or {}).get("captured_at") or 0)
+    if data is None or time.time() - captured > TERMINAL_FRESH_SECONDS:
+        return {
+            "available": False,
+            "reason": "No live capture: the feeder mirrors agents active in "
+            "the last 10 minutes.",
+        }
+    return {"available": True, **data}
 
 
 @router.get("/nudges")

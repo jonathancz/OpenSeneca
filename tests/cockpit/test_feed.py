@@ -788,3 +788,100 @@ def test_write_fleet_skips_unchanged_content(fm):
     (fm["state"] / "alpha.status").write_text("done: finished\n")
     assert write_fleet(fm["out"], build_fleet(cfg_for(fm), now=NOW + 2), previous)
     assert not list(fm["out"].glob(".fleet.json.*"))
+
+
+# ---------------------------------------------------------------------------
+# Merged PRs finish a task even when its backlog row stayed open
+# ---------------------------------------------------------------------------
+
+
+def _mark_merged(state: Path, task_id: str, when: float) -> None:
+    marker = state / f"{task_id}.pr-poll-merge-notified"
+    marker.write_text("fm-pr-poll-merge-notified-v1\ngithub\ngithub.com\no/r\n7\n")
+    os.utime(marker, (when, when))
+
+
+def _settle(fm: dict, task_id: str = "alpha") -> None:
+    """Make a task done and idle, with its decision answered."""
+    (fm["state"] / f"{task_id}.status").write_text(
+        f"done [at={fm['spawn'] + 900}]: PR https://github.com/o/r/pull/7 opened\n"
+    )
+
+
+def test_firstmate_merge_record_finishes_the_task(fm):
+    _settle(fm)
+    _mark_merged(fm["state"], "alpha", NOW - 600)  # 00:16 on 15 Nov in Paris
+    fleet = build_fleet(cfg_for(fm), now=NOW).fleet
+    alpha = {a["id"]: a for a in fleet["agents"]}["alpha"]
+    assert alpha["closed"] is True and alpha["state"] == "done"
+    done = next(f for f in fleet["finished"] if f["id"] == "alpha")
+    assert done["done_on"] == "2026-11-15" and done["pr"]["number"] == 7
+    # A week later it leaves the board.
+    later = build_fleet(cfg_for(fm), now=NOW + 8 * DAY).fleet
+    assert "alpha" not in {a["id"] for a in later["agents"]}
+    assert "alpha" not in {f["id"] for f in later["finished"]}
+
+
+def test_a_working_agent_is_not_finished_by_an_old_merge(fm):
+    (fm["state"] / "alpha.status").write_text("working: next slice\n")
+    (fm["state"] / "alpha.busy-state").write_text(f"v1 state=busy ts={NOW - 60}\n")
+    _mark_merged(fm["state"], "alpha", NOW - 3600)
+    alpha = {a["id"]: a for a in build_fleet(cfg_for(fm), now=NOW).fleet["agents"]}[
+        "alpha"
+    ]
+    assert alpha["state"] == "working" and alpha["closed"] is False
+
+
+def test_meta_merged_line_finishes_the_task(fm):
+    _settle(fm)
+    meta = fm["state"] / "alpha.meta"
+    meta.write_text(meta.read_text() + f"merged={int(NOW - 600)}\n")
+    alpha = {a["id"]: a for a in build_fleet(cfg_for(fm), now=NOW).fleet["agents"]}[
+        "alpha"
+    ]
+    assert alpha["closed"] is True and alpha["state"] == "done"
+
+
+def test_merge_landed_status_finishes_the_task(fm):
+    (fm["state"] / "alpha.status").write_text(
+        f"done [at={fm['spawn'] + 900}]: PR https://github.com/o/r/pull/7 opened\n"
+        f"done [at={int(NOW - 600)}]: merge-landed PR 7\n"
+    )
+    alpha = {a["id"]: a for a in build_fleet(cfg_for(fm), now=NOW).fleet["agents"]}[
+        "alpha"
+    ]
+    assert alpha["closed"] is True and alpha["state"] == "done"
+
+
+def test_merge_authority_is_not_a_merge(fm):
+    _settle(fm)
+    (fm["state"] / "alpha.merge-authority").write_text("granted\n")
+    alpha = {a["id"]: a for a in build_fleet(cfg_for(fm), now=NOW).fleet["agents"]}[
+        "alpha"
+    ]
+    assert alpha["closed"] is False
+
+
+def test_merge_is_never_asked_of_github(fm, monkeypatch):
+    _settle(fm)
+    calls: list[list[str]] = []
+    real_run = feed.subprocess.run
+
+    def spy(cmd, *a, **kw):
+        calls.append(list(cmd))
+        return real_run(cmd, *a, **kw)
+
+    monkeypatch.setattr(feed.subprocess, "run", spy)
+    build_fleet(cfg_for(fm), now=NOW)
+    assert not any(c and c[0] == "gh" for c in calls)
+    assert all(c[0] != "gh" for c in feed.ALLOWED_COMMANDS)
+    with pytest.raises(SystemExit):
+        feed.parse_args(["--no-github"])
+
+
+def test_backlog_merged_date_counts_as_done():
+    rows = feed.parse_backlog(
+        "## Done\n- [x] t - Move the key https://github.com/o/r/pull/126 "
+        "(repo: r) (kind: ship) (merged 2026-11-15)\n"
+    )
+    assert rows[0].done == "2026-11-15" and rows[0].title.endswith("pull/126")

@@ -1,14 +1,33 @@
 import { useEffect, useMemo, useState } from 'react';
-import { MessageCircle, X } from 'lucide-react';
+import { Columns2, MessageCircle, X } from 'lucide-react';
 import { CrewBoard } from '../components/Crew/CrewBoard';
 import { AgentView } from '../components/Crew/AgentView';
 import { SenecaDock } from '../components/Crew/SenecaDock';
 import { StateGlyph } from '../components/Crew/parts';
 import { fetchNudges, useCrewStore } from '../lib/crew-api';
 import { type NudgeStatus, nudgeLine } from '../lib/crew';
-import { BOARD, type CrewTabs, closeTab, initialTabs, isDockShortcut, openTab, pruneTabs } from '../lib/crew-tabs';
+import {
+  BOARD,
+  type CrewTabs,
+  canSplit,
+  closeTab,
+  initialTabs,
+  isDockShortcut,
+  openTab,
+  pruneTabs,
+  toggleSplit,
+} from '../lib/crew-tabs';
+import { SPLIT_QUERY, besidePane, splitFits, watchSplitFits } from '../lib/split-view';
 import { modKey } from '../components/HintBar';
 import '../components/Crew/crew.css';
+
+function splitQuery() {
+  try {
+    return window.matchMedia(SPLIT_QUERY);
+  } catch {
+    return null;
+  }
+}
 
 function wideScreen(): boolean {
   try {
@@ -32,6 +51,9 @@ export function CrewPage() {
   const [tabs, setTabs] = useState<CrewTabs>(initialTabs);
   const [dock, setDock] = useState(wideScreen);
   const [nudges, setNudges] = useState<NudgeStatus | null>(null);
+  const [splitRoom, setSplitRoom] = useState(() => splitFits(splitQuery()));
+
+  useEffect(() => watchSplitFits(splitQuery(), setSplitRoom), []);
 
   useEffect(() => {
     const t = setInterval(() => setNowMs(Date.now()), 30_000);
@@ -89,6 +111,8 @@ export function CrewPage() {
   const sinceFetch = loadedAt ? Math.max(0, Math.floor((nowMs - loadedAt) / 1000)) : 0;
   const ageSeconds = response.age_seconds != null ? response.age_seconds + sinceFetch : null;
   const current = tabs.current === BOARD ? null : fleet.agents.find((a) => a.id === tabs.current) ?? null;
+  const besideId = besidePane(tabs.split, current?.id ?? null, splitRoom);
+  const beside = besideId ? fleet.agents.find((a) => a.id === besideId) ?? null : null;
 
   return (
     <div className="cw-shell" data-dock={dock ? 'open' : 'closed'}>
@@ -111,7 +135,7 @@ export function CrewPage() {
                 <button
                   className="sn-tab"
                   role="tab"
-                  data-active={tabs.current === id}
+                  data-active={tabs.current === id || tabs.split === id}
                   aria-selected={tabs.current === id}
                   onClick={() => setTabs((t) => openTab(t, id))}
                 >
@@ -133,6 +157,16 @@ export function CrewPage() {
           <span className="cw-rail-right">
             <button
               className="cw-ghost"
+              aria-pressed={Boolean(tabs.split)}
+              disabled={!canSplit(tabs)}
+              onClick={() => setTabs((t) => toggleSplit(t))}
+              title="Show two agents side by side"
+            >
+              <Columns2 size={14} strokeWidth={1.6} />
+              Split
+            </button>
+            <button
+              className="cw-ghost"
               aria-pressed={dock}
               onClick={() => setDock((d) => !d)}
               title={`Show or hide Seneca (${modKey('J')})`}
@@ -142,7 +176,12 @@ export function CrewPage() {
             </button>
           </span>
         </div>
-        {current ? (
+        {current && beside ? (
+          <div className="cw-split">
+            <AgentView key={current.id} agent={current} fleet={fleet} nowMs={nowMs} compact />
+            <AgentView key={beside.id} agent={beside} fleet={fleet} nowMs={nowMs} compact />
+          </div>
+        ) : current ? (
           <AgentView key={current.id} agent={current} fleet={fleet} nowMs={nowMs} />
         ) : (
           <div className="cw-page">

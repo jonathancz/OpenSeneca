@@ -56,6 +56,7 @@ def test_every_cockpit_route_is_read_only(tmp_path):
     )
     assert listed == [
         ("/v1/cockpit/agents/{agent_id}/changes", "GET"),
+        ("/v1/cockpit/agents/{agent_id}/terminal", "GET"),
         ("/v1/cockpit/agents/{agent_id}/transcript", "GET"),
         ("/v1/cockpit/fleet", "GET"),
         ("/v1/cockpit/live", "WS"),
@@ -78,7 +79,7 @@ def test_the_real_app_mounts_only_read_only_cockpit_routes():
     engine.engine_id = "mock"
     app = create_app(engine, "test-model", config=cfg)
     routes = cockpit_routes_of(app)
-    assert len(routes) == 5
+    assert len(routes) == 6
     for r in routes:
         if isinstance(r, APIRoute):
             assert set(r.methods) <= READ_ONLY_METHODS, r.path
@@ -193,3 +194,42 @@ def test_live_channel_requires_the_api_key(tmp_path):
         "/v1/cockpit/live", headers={"Authorization": "Bearer k-test"}
     ) as ws:
         assert ws.receive_json()["type"] == "hello"
+
+
+def test_terminal_mirror_is_served_read_only(tmp_path):
+    client = TestClient(make_app(tmp_path))
+    write(
+        tmp_path / "cockpit",
+        "fleet.json",
+        {
+            "generated_at": int(time.time()),
+            "agents": [
+                {"id": "alpha", "window": "firstmate:fm-alpha", "client": False},
+                {"id": "client-x", "window": None, "client": True},
+                {"id": "nowin", "client": False},
+            ],
+        },
+    )
+    before = sorted(p.relative_to(tmp_path) for p in tmp_path.rglob("*"))
+    body = client.get("/v1/cockpit/agents/alpha/terminal").json()
+    assert body["available"] is False and "No live capture" in body["reason"]
+    write(
+        tmp_path / "cockpit",
+        "terminals/alpha.json",
+        {"captured_at": time.time(), "lines": ["\u001b[32mok\u001b[0m"]},
+    )
+    body = client.get("/v1/cockpit/agents/alpha/terminal").json()
+    assert body["available"] is True and body["lines"] == ["\u001b[32mok\u001b[0m"]
+    write(
+        tmp_path / "cockpit",
+        "terminals/alpha.json",
+        {"captured_at": time.time() - 120, "lines": ["old"]},
+    )
+    assert client.get("/v1/cockpit/agents/alpha/terminal").json()["available"] is False
+    for other in ("client-x", "nowin", "ghost", "..%2Fx"):
+        assert client.get(f"/v1/cockpit/agents/{other}/terminal").status_code == 404
+    after = sorted(p.relative_to(tmp_path) for p in tmp_path.rglob("*"))
+    assert [p for p in after if p not in before] == [
+        Path("cockpit/terminals"),
+        Path("cockpit/terminals/alpha.json"),
+    ]

@@ -6,6 +6,8 @@
 #
 # It only reads firstmate's records (FIRSTMATE_HOME, default ~/firstmate) and
 # writes OPENSENECA_COCKPIT_DIR (default ~/.local/share/openseneca/cockpit).
+# Live terminal mirrors use tmux capture-pane -p only, for live own-project
+# agents.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 feed="$here/../../src/openjarvis/cockpit/feed.py"
