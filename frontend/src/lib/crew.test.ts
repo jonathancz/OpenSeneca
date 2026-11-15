@@ -15,6 +15,11 @@ import {
   ledeSentence,
   readyForReview,
   splitWaiting,
+  foldToolRuns,
+  nudgeLine,
+  nudgeRules,
+  progressSteps,
+  stageFor,
 } from './crew';
 
 const NOW = Date.UTC(2026, 10, 14, 8, 50) / 1000; // 14 Nov 09:50 in Paris
@@ -240,6 +245,13 @@ describe('board', () => {
     ]);
   });
 
+  it('lets agent cards open their agent tab', () => {
+    const ids = cols.flatMap((c) => c.cards).map((c) => [c.id, c.agentId]);
+    expect(ids).toContainEqual(['r-pr', 'pr']);
+    expect(ids).toContainEqual(['a-w-new', 'w-new']);
+    expect(ids.filter(([id]) => String(id).startsWith('q-')).every(([, a]) => a === null)).toBe(true);
+  });
+
   it('keeps only what finished today', () => {
     expect(col('finished').cards.map((c) => [c.title, c.link?.label])).toEqual([['Shipped today', 'PR #5']]);
   });
@@ -288,5 +300,74 @@ describe('lede', () => {
     expect(text(fleet())).toBe('<b>Nothing waits on you.</b> No agent is working right now.');
     expect(countWord(12)).toBe('12');
     expect(countWord(1, false)).toBe('one');
+  });
+});
+
+describe('stages', () => {
+  it('tracks a ship task from build to PR', () => {
+    expect(stageFor(agent({}))).toMatchObject({ index: 1, tone: 'now' });
+    expect(stageFor(agent({ status_line: 'no-mistakes run fixing review findings', state: 'paused' }))).toMatchObject({
+      index: 2,
+      tone: 'idle',
+    });
+    expect(stageFor(agent({ state: 'needs' }))).toMatchObject({ index: 1, tone: 'wait' });
+    const pr = { url: 'https://github.com/o/r/pull/97', number: 97 };
+    expect(stageFor(agent({ state: 'done', pr }))).toMatchObject({ index: 3, tone: 'wait' });
+  });
+
+  it('tracks a scout task to its report', () => {
+    expect(stageFor(agent({ kind: 'scout' })).stages).toEqual(['Brief', 'Research', 'Report', 'Done']);
+    expect(stageFor(agent({ kind: 'scout', report: true })).index).toBe(2);
+    expect(stageFor(agent({ kind: 'scout', state: 'done', report: true })).index).toBe(3);
+    expect(progressSteps(agent({ kind: 'scout', state: 'done', report: true })).map((s) => s.state)).toEqual([
+      'done',
+      'done',
+      'done',
+      'done',
+    ]);
+    expect(progressSteps(agent({ state: 'needs' })).map((s) => s.state)).toEqual([
+      'done',
+      'wait',
+      'todo',
+      'todo',
+      'todo',
+    ]);
+  });
+});
+
+describe('transcript', () => {
+  it('folds long runs of tool calls', () => {
+    const tool = (n: number) => ({ t: 'tool' as const, at: n, name: 'Bash', summary: `s${n}` });
+    const rows = foldToolRuns([
+      { t: 'agent', at: 0, text: 'hi' },
+      tool(1),
+      tool(2),
+      tool(3),
+      tool(4),
+      tool(5),
+      { t: 'agent', at: 6, text: 'done' },
+      tool(7),
+    ]);
+    expect(rows.map((r) => (r.t === 'fold' ? `fold${r.count}` : r.t === 'tool' ? r.summary : r.t))).toEqual([
+      'agent',
+      's1',
+      's2',
+      's3',
+      'fold2',
+      'agent',
+      's7',
+    ]);
+  });
+});
+
+describe('nudges', () => {
+  it('says how Discord nudges stand', () => {
+    expect(nudgeLine(null)).toBeNull();
+    expect(nudgeLine({ enabled: false, channel_ready: false })).toBe('Discord nudges off');
+    expect(nudgeLine({ enabled: true, channel_ready: false })).toBe('Discord nudges waiting for the Discord channel');
+    expect(
+      nudgeLine({ enabled: true, channel_ready: true, rules: { digest_times: ['09:00', '17:00'], quiet_hours: ['23:00', '08:00'] } }),
+    ).toBe('Discord DM on, digests at 09:00 and 17:00');
+    expect(nudgeRules(null)[2]).toBe('Quiet hours 23:00 to 08:00 hold everything except blocks.');
   });
 });

@@ -21,9 +21,15 @@ from openjarvis.server.cockpit_routes import install_cockpit  # noqa: E402
 READ_ONLY_METHODS = {"GET", "HEAD"}
 
 
-def make_app(tmp_path: Path) -> FastAPI:
+def make_app(tmp_path: Path, **kw) -> FastAPI:
     app = FastAPI()
-    install_cockpit(app, cockpit_dir=tmp_path / "cockpit")
+    install_cockpit(
+        app,
+        cockpit_dir=tmp_path / "cockpit",
+        state_path=tmp_path / "data" / "nudges.json",
+        start_nudges=False,
+        **kw,
+    )
     return app
 
 
@@ -49,8 +55,11 @@ def test_every_cockpit_route_is_read_only(tmp_path):
         for r in routes
     )
     assert listed == [
+        ("/v1/cockpit/agents/{agent_id}/changes", "GET"),
+        ("/v1/cockpit/agents/{agent_id}/transcript", "GET"),
         ("/v1/cockpit/fleet", "GET"),
         ("/v1/cockpit/live", "WS"),
+        ("/v1/cockpit/nudges", "GET"),
     ]
     for r in routes:
         if isinstance(r, APIRoute):
@@ -69,7 +78,7 @@ def test_the_real_app_mounts_only_read_only_cockpit_routes():
     engine.engine_id = "mock"
     app = create_app(engine, "test-model", config=cfg)
     routes = cockpit_routes_of(app)
-    assert len(routes) == 2
+    assert len(routes) == 5
     for r in routes:
         if isinstance(r, APIRoute):
             assert set(r.methods) <= READ_ONLY_METHODS, r.path
@@ -91,11 +100,71 @@ def test_fleet_missing_then_served(tmp_path):
     assert client.get("/v1/cockpit/fleet").json()["stale"] is True
 
 
+def test_agent_files_and_bad_ids(tmp_path):
+    client = TestClient(make_app(tmp_path))
+    write(tmp_path / "cockpit", "transcripts/alpha.json", {"entries": [{"t": "agent"}]})
+    write(tmp_path / "cockpit", "changes/alpha.json", {"files": []})
+    (tmp_path / "secret.json").write_text('{"x": 1}')
+    assert client.get("/v1/cockpit/agents/alpha/transcript").json()["entries"]
+    assert client.get("/v1/cockpit/agents/alpha/changes").json() == {"files": []}
+    assert client.get("/v1/cockpit/agents/beta/transcript").status_code == 404
+    for bad in ("..%2F..%2Fsecret", ".hidden", "a..b"):
+        assert client.get(f"/v1/cockpit/agents/{bad}/changes").status_code == 404
+
+
 def test_mutating_methods_are_refused(tmp_path):
     client = TestClient(make_app(tmp_path))
     for method in ("post", "put", "patch", "delete"):
         res = getattr(client, method)("/v1/cockpit/fleet")
         assert res.status_code == 405
+
+
+def test_nudges_status(tmp_path, monkeypatch):
+    client = TestClient(make_app(tmp_path))
+    body = client.get("/v1/cockpit/nudges").json()
+    assert body["enabled"] is True and body["channel_ready"] is False
+    assert body["rules"]["digest_times"] == ["09:00", "17:00"]
+    assert body["rules"]["quiet_hours"] == ["23:00", "08:00"]
+    monkeypatch.setenv("OPENJARVIS_COCKPIT_NUDGES", "0")
+    off = TestClient(make_app(tmp_path / "off"))
+    assert off.get("/v1/cockpit/nudges").json() == {
+        "enabled": False,
+        "channel_ready": False,
+    }
+
+
+def test_nudges_use_the_captain_alias_of_the_bridge(tmp_path):
+    app = make_app(tmp_path)
+    bridge = MagicMock()
+    bridge.list_channels.return_value = ["discord", "captain"]
+    bridge.send.return_value = True
+    app.state.channel_bridge = bridge
+    runner = app.state.cockpit_nudges
+    # A fixed midday time in the fleet's own zone: no digest is due and it is
+    # outside quiet hours, whatever the host clock or time zone says.
+    now = 1_763_208_000.0  # 2025-11-15 12:00 UTC
+    write(
+        tmp_path / "cockpit",
+        "fleet.json",
+        {"generated_at": int(now), "tz": "UTC", "waiting": []},
+    )
+    runner.tick(now)  # seed
+    write(
+        tmp_path / "cockpit",
+        "fleet.json",
+        {
+            "generated_at": int(now),
+            "tz": "UTC",
+            "spaces": [],
+            "waiting": [
+                {"kind": "blocked", "agent_id": "a", "title": "Task a", "key": "k"}
+            ],
+        },
+    )
+    assert runner.tick(now + 1) == ["Task a is blocked: k. Help it in Claude Code."]
+    bridge.send.assert_called_once_with(
+        "captain", "Task a is blocked: k. Help it in Claude Code."
+    )
 
 
 def test_live_channel_pushes_new_versions(tmp_path, monkeypatch):

@@ -100,6 +100,16 @@ describe('CrewBoard', () => {
     expect(html).not.toContain('cw-stalled');
   });
 
+  it('makes agent cards open their tab only when the page can open them', () => {
+    const opening = renderToStaticMarkup(
+      <CrewBoard fleet={fleet} nowMs={NOW * 1000} ageSeconds={12} stale={false} onOpen={() => {}} nudgeLine="Discord DM on" />,
+    );
+    expect(opening).toContain('data-opens="true"');
+    expect(opening).toContain('role="button"');
+    expect(opening).toContain('Discord DM on');
+    expect(html).not.toContain('data-opens="true"');
+  });
+
   it('shows client work by project and state only', () => {
     expect(html).toContain('aria-label="belit task, belit, Working"');
   });

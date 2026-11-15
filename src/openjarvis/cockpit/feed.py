@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Cockpit feeder: firstmate's records in, a read only JSON file out.
+"""Cockpit feeder: firstmate's records in, a read only JSON folder out.
 
 Runs on the host as the captain's user, never inside Docker: the container
-cannot see tmux or the firstmate home, and must not. Only the Python standard
-library is used, so ``python3 feed.py`` works without the OpenJarvis
-environment (see ``scripts/cockpit-feed/``).
+cannot see tmux, ``~/.claude`` or the firstmate home, and must not. Only the
+Python standard library is used, so ``python3 feed.py`` works without the
+OpenJarvis environment (see ``scripts/cockpit-feed/``).
 
 What it reads, all read only:
 
@@ -12,18 +12,26 @@ What it reads, all read only:
   or recent crew task each.
 * ``<firstmate>/data/backlog.md``: task titles, the queue, captain holds and
   finished work.
-* ``<firstmate>/data/<id>/report.md``: whether a scout's report exists.
+* ``<firstmate>/data/<id>/brief.md`` (the captain's intent only) and whether
+  ``report.md`` exists.
 * ``bin/fm-fleet-snapshot.sh --json`` when it succeeds. It is preferred for
   each task's current state and open decisions; today it fails on large
   backlogs, so the direct records are always the fallback.
+* Claude Code transcripts under ``~/.claude/projects/<worktree slug>/``.
+* ``git status`` and ``git diff --numstat`` in each ship task's worktree, with
+  optional locks off so not even the index is refreshed.
 
 What it writes, atomically, into the output folder only (never inside the
-firstmate home): ``fleet.json``.
+firstmate home): ``fleet.json``, ``transcripts/<id>.json`` and
+``changes/<id>.json``. The salt behind opaque client ids lives outside that
+folder, so the container that mounts it cannot read it.
 
 Privacy: client projects (belit, VIEW, alpine by default) are reduced to the
-project name and the task's state: no title, no status text, no branch, no PR,
-and an opaque id. Anything that looks like a token or key is redacted from
-every piece of text.
+project name and the task's state: no title, no status text, no branch, no
+PR, no transcript, no changes, and an opaque id. Transcripts are trimmed to
+messages, tool names and a one line summary per tool call; tool output and
+file contents are never read into the output. Anything that looks like a
+token or key is redacted from every piece of text.
 """
 
 from __future__ import annotations
@@ -45,6 +53,8 @@ from pathlib import Path
 from typing import Any, Iterable
 
 SCHEMA = "seneca-cockpit-fleet.v1"
+TRANSCRIPT_SCHEMA = "seneca-cockpit-transcript.v1"
+CHANGES_SCHEMA = "seneca-cockpit-changes.v1"
 
 # Display names for firstmate project folders. Unknown projects keep their
 # folder name.
@@ -74,6 +84,25 @@ FINISHED_WINDOW_DAYS = 7
 HOLD_AGED_DAYS = 14
 SUMMARY_CAP = 240
 QUEUED_MAX = 60
+TRANSCRIPT_MAX_ENTRIES = 200
+TEXT_CAP = 2000
+TOOL_SUMMARY_CAP = 100
+BRIEF_CAP = 1600
+TRANSCRIPT_FULL_READ_BYTES = 8 * 1024 * 1024
+TRANSCRIPT_HEAD_BYTES = 1 * 1024 * 1024
+TRANSCRIPT_TAIL_BYTES = 6 * 1024 * 1024
+CHANGES_MAX_FILES = 200
+GIT_TIMEOUT = 10
+CHANGES_MAX_AGE = 5 * 60
+
+# Commands this feeder may run, and nothing else. A test asserts it.
+ALLOWED_COMMANDS = (
+    ("git", "rev-parse"),
+    ("git", "merge-base"),
+    ("git", "diff"),
+    ("git", "status"),
+    ("bin/fm-fleet-snapshot.sh", "--json"),
+)
 
 # ---------------------------------------------------------------------------
 # Text hygiene
@@ -132,6 +161,10 @@ def clip(text: str, cap: int) -> str:
 
 def one_line(text: str, cap: int) -> str:
     return clip(" ".join(text.split()), cap)
+
+
+def clean(text: str, cap: int) -> str:
+    return clip(scrub(text), cap)
 
 
 _ANY_URL = re.compile(r"\(?https?://\S+")
@@ -418,18 +451,482 @@ class Privacy:
         return "client-" + digest[:10]
 
 
-def load_salt(out_dir: Path) -> bytes:
-    path = out_dir / ".salt"
+def default_salt_file() -> Path:
+    return Path.home() / ".local" / "state" / "openseneca" / "cockpit.salt"
+
+
+def load_salt(path: Path, legacy_out_dir: Path | None = None) -> bytes:
+    """The key behind opaque client ids, kept outside the mounted folder.
+
+    A salt left in the output folder by an earlier version is moved here once,
+    so client ids stay stable and the container can no longer read it.
+    """
+    legacy = legacy_out_dir / ".salt" if legacy_out_dir is not None else None
     try:
         data = path.read_bytes()
         if len(data) >= 16:
+            if legacy is not None and legacy.exists():
+                legacy.unlink()
             return data
     except OSError:
         pass
-    data = os.urandom(32)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    data = b""
+    if legacy is not None:
+        try:
+            data = legacy.read_bytes()
+        except OSError:
+            data = b""
+    if len(data) < 16:
+        data = os.urandom(32)
+    path.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write_bytes(path, data)
+    os.chmod(path, 0o600)
+    if legacy is not None and legacy.exists():
+        legacy.unlink()
     return data
+
+
+# ---------------------------------------------------------------------------
+# Transcripts
+# ---------------------------------------------------------------------------
+
+
+def project_slug(path: str) -> str:
+    """Claude Code's folder name for a working directory."""
+    return re.sub(r"[^A-Za-z0-9]", "-", path)
+
+
+def _iso_epoch(value: Any) -> float | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return _dt.datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+_REMINDER = re.compile(r"<system-reminder>[\s\S]*?</system-reminder>")
+_SKIP_USER = re.compile(
+    r"^\s*<(?:command-|local-command|bash-|task-notification|user-prompt-submit)"
+)
+
+
+def _user_text(content: Any) -> str:
+    if isinstance(content, str):
+        text = content
+    elif isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(str(block.get("text", "")))
+        text = "\n".join(parts)
+    else:
+        return ""
+    text = _REMINDER.sub("", text).strip()
+    if not text or _SKIP_USER.match(text):
+        return ""
+    return text
+
+
+def tool_summary(name: str, tool_input: Any) -> str:
+    """One line describing a tool call, never its output or file contents."""
+    inp = tool_input if isinstance(tool_input, dict) else {}
+    summary = ""
+    if name == "Bash":
+        summary = str(inp.get("description") or "shell command")
+    elif name in ("Read", "Edit", "Write", "MultiEdit", "NotebookEdit"):
+        path = str(inp.get("file_path") or inp.get("notebook_path") or "")
+        summary = os.path.basename(path.rstrip("/"))
+    elif name in ("Grep", "Glob"):
+        summary = str(inp.get("pattern") or "")
+    elif name in ("Agent", "Task"):
+        summary = str(inp.get("description") or "")
+    elif name == "WebFetch":
+        m = re.match(r"https?://([^/]+)", str(inp.get("url") or ""))
+        summary = m.group(1) if m else ""
+    elif name == "WebSearch":
+        summary = str(inp.get("query") or "")
+    elif name == "Skill":
+        summary = str(inp.get("skill") or "")
+    return one_line(scrub(summary), TOOL_SUMMARY_CAP)
+
+
+def _iter_transcript_lines(path: Path) -> Iterable[str]:
+    try:
+        size = path.stat().st_size
+        with open(path, "rb") as fh:
+            if size <= TRANSCRIPT_FULL_READ_BYTES:
+                chunks = [fh.read()]
+            else:
+                head = fh.read(TRANSCRIPT_HEAD_BYTES)
+                fh.seek(size - TRANSCRIPT_TAIL_BYTES)
+                tail = fh.read()
+                # Drop the partial first line of the tail.
+                tail = tail[tail.find(b"\n") + 1 :]
+                head = head[: head.rfind(b"\n") + 1]
+                chunks = [head, tail]
+    except OSError:
+        return
+    for chunk in chunks:
+        for raw in chunk.splitlines():
+            yield raw.decode("utf-8", errors="replace")
+
+
+# Cheap pre-filter so huge request blobs are never JSON-decoded.
+_KIND_HINT = re.compile(r'"type":\s?"(?:user|assistant)"')
+
+
+def trim_transcript(path: Path) -> list[dict[str, Any]]:
+    """Messages, tool names and one line summaries; nothing else."""
+    entries: list[dict[str, Any]] = []
+    for raw in _iter_transcript_lines(path):
+        if not _KIND_HINT.search(raw, 0, 4096):
+            continue
+        try:
+            rec = json.loads(raw)
+        except ValueError:
+            continue
+        kind = rec.get("type")
+        if kind not in ("user", "assistant") or rec.get("isSidechain"):
+            continue
+        if rec.get("isMeta") or rec.get("isCompactSummary"):
+            continue
+        at = _iso_epoch(rec.get("timestamp"))
+        msg = rec.get("message") or {}
+        content = msg.get("content")
+        if kind == "user":
+            text = _user_text(content)
+            if text:
+                entries.append({"t": "user", "at": at, "text": clean(text, TEXT_CAP)})
+            continue
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            btype = block.get("type")
+            if btype == "text":
+                text = str(block.get("text", "")).strip()
+                if text:
+                    entries.append(
+                        {"t": "agent", "at": at, "text": clean(text, TEXT_CAP)}
+                    )
+            elif btype == "tool_use":
+                name = str(block.get("name", "tool"))
+                entries.append(
+                    {
+                        "t": "tool",
+                        "at": at,
+                        "name": one_line(name, 60),
+                        "summary": tool_summary(name, block.get("input")),
+                    }
+                )
+    return entries
+
+
+def transcript_start(path: Path) -> float | None:
+    """Time of the first timestamped record, read from the file's head."""
+    try:
+        with open(path, "rb") as fh:
+            for _ in range(400):
+                raw = fh.readline()
+                if not raw:
+                    break
+                m = re.search(rb'"timestamp":\s?"([^"]+)"', raw)
+                if m:
+                    return _iso_epoch(m.group(1).decode())
+    except OSError:
+        return None
+    return None
+
+
+_OWNER_SCAN_BYTES = 3 * 1024 * 1024
+
+
+def transcript_owner(path: Path, state_dir: str) -> str | None:
+    """The task whose firstmate state files this session touches most.
+
+    A crew session reads its brief and appends to ``state/<id>.status``, so
+    the id named most often in its head is the task that owns it.
+    """
+    pattern = re.compile(
+        re.escape(state_dir.rstrip("/")).encode()
+        + rb"/([A-Za-z0-9._-]+?)\.(?:status|inbox|meta)\b"
+    )
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(_OWNER_SCAN_BYTES)
+    except OSError:
+        return None
+    counts: dict[bytes, int] = {}
+    for m in pattern.finditer(head):
+        counts[m.group(1)] = counts.get(m.group(1), 0) + 1
+    if not counts:
+        return None
+    best = max(counts.items(), key=lambda kv: kv[1])[0]
+    return best.decode(errors="replace")
+
+
+def _stat_key(path: Path) -> tuple[int, int] | None:
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    return (st.st_size, st.st_mtime_ns)
+
+
+def _git_dir(worktree: str) -> Path:
+    dot = Path(worktree) / ".git"
+    if dot.is_file():
+        text = read_text(dot, 4096).strip()
+        if text.startswith("gitdir:"):
+            target = Path(text[len("gitdir:") :].strip())
+            return target if target.is_absolute() else Path(worktree) / target
+    return dot
+
+
+def _git_signature(worktree: str) -> tuple:
+    gitdir = _git_dir(worktree)
+    return tuple(_stat_key(gitdir / name) for name in ("HEAD", "index", "logs/HEAD"))
+
+
+class FeedCache:
+    """Remembers transcript and git reads between rebuilds of one feeder.
+
+    A session file is read again only when its size or mtime changes; a
+    worktree's changes are read again when its HEAD, index or reflog change,
+    or after :data:`CHANGES_MAX_AGE` for edits that touch none of them.
+    Entries not used by the latest rebuild are dropped by :meth:`sweep`.
+    """
+
+    def __init__(self) -> None:
+        self._sessions: dict[str, tuple[tuple[int, int], dict[str, Any]]] = {}
+        self._changes: dict[
+            tuple[str, str | None], tuple[tuple, float, dict[str, Any] | None]
+        ] = {}
+        self._used_sessions: set[str] = set()
+        self._used_changes: set[tuple[str, str | None]] = set()
+        self._built: dict[str, dict[str, dict[str, Any] | None]] = {}
+        self._used_built: set[str] = set()
+
+    def remember(
+        self,
+        task_id: str,
+        transcript: dict[str, Any] | None,
+        changes: dict[str, Any] | None,
+    ) -> None:
+        """Keep what was last built for a task, to reuse once it closes."""
+        self._used_built.add(task_id)
+        self._built[task_id] = {"transcript": transcript, "changes": changes}
+
+    def kept(self, task_id: str, out_dir: Path | None) -> dict[str, Any]:
+        """What was last built for a closed task: from memory, else its files."""
+        self._used_built.add(task_id)
+        hit = self._built.get(task_id)
+        if hit is None:
+            hit = {
+                "transcript": _read_output(
+                    out_dir, "transcripts", task_id, TRANSCRIPT_SCHEMA
+                ),
+                "changes": _read_output(out_dir, "changes", task_id, CHANGES_SCHEMA),
+            }
+            self._built[task_id] = hit
+        return hit
+
+    def _session(self, path: Path) -> dict[str, Any] | None:
+        name = str(path)
+        key = _stat_key(path)
+        if key is None:
+            self._sessions.pop(name, None)
+            return None
+        self._used_sessions.add(name)
+        hit = self._sessions.get(name)
+        if hit is not None and hit[0] == key:
+            return hit[1]
+        memo: dict[str, Any] = {}
+        self._sessions[name] = (key, memo)
+        return memo
+
+    def start(self, path: Path) -> float | None:
+        memo = self._session(path)
+        if memo is None:
+            return None
+        if "start" not in memo:
+            memo["start"] = transcript_start(path)
+        return memo["start"]
+
+    def owner(self, path: Path, state_dir: str) -> str | None:
+        memo = self._session(path)
+        if memo is None:
+            return None
+        slot = f"owner:{state_dir}"
+        if slot not in memo:
+            memo[slot] = transcript_owner(path, state_dir)
+        return memo[slot]
+
+    def entries(self, path: Path) -> list[dict[str, Any]]:
+        memo = self._session(path)
+        if memo is None:
+            return []
+        if "entries" not in memo:
+            memo["entries"] = trim_transcript(path)
+        return memo["entries"]
+
+    def changes(
+        self, worktree: str, branch: str | None, now: float
+    ) -> dict[str, Any] | None:
+        slot = (worktree, branch)
+        self._used_changes.add(slot)
+        sig = _git_signature(worktree)
+        hit = self._changes.get(slot)
+        if hit is not None and hit[0] == sig and 0 <= now - hit[1] < CHANGES_MAX_AGE:
+            return hit[2]
+        result = read_changes(worktree, branch)
+        self._changes[slot] = (sig, now, result)
+        return result
+
+    def sweep(self) -> None:
+        for name in set(self._sessions) - self._used_sessions:
+            del self._sessions[name]
+        for slot in set(self._changes) - self._used_changes:
+            del self._changes[slot]
+        for task_id in set(self._built) - self._used_built:
+            del self._built[task_id]
+        self._used_sessions.clear()
+        self._used_changes.clear()
+        self._used_built.clear()
+
+
+def _read_output(
+    out_dir: Path | None, sub: str, task_id: str, schema: str
+) -> dict[str, Any] | None:
+    if out_dir is None or "/" in task_id or task_id.startswith("."):
+        return None
+    try:
+        data = json.loads((out_dir / sub / f"{task_id}.json").read_bytes())
+    except (OSError, ValueError):
+        return None
+    if (
+        not isinstance(data, dict)
+        or data.get("schema") != schema
+        or data.get("task_id") != task_id
+    ):
+        return None
+    return data
+
+
+def find_transcript(
+    projects_dir: Path,
+    worktree: str,
+    spawned: int | None,
+    *,
+    task_id: str,
+    state_dir: str,
+    cache: FeedCache | None = None,
+) -> Path | None:
+    """Newest Claude Code session for this worktree that belongs to the task.
+
+    Treehouse reuses worktree folders, so a session counts only when it
+    started after the task's spawn and names the task's own state files more
+    than any other task's.
+    """
+    if not worktree or spawned is None:
+        return None
+    cache = cache if cache is not None else FeedCache()
+    folder = projects_dir / project_slug(worktree)
+    try:
+        files = [p for p in folder.glob("*.jsonl") if p.is_file()]
+    except OSError:
+        return None
+    candidates: list[tuple[float, Path]] = []
+    for p in files:
+        m = mtime(p)
+        if m is None or m < spawned - 120:
+            continue
+        start = cache.start(p)
+        if start is None or start < spawned - 120:
+            continue
+        candidates.append((start, p))
+    for _start, p in sorted(candidates, key=lambda c: c[0], reverse=True):
+        if cache.owner(p, state_dir) == task_id:
+            return p
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Git changes (read only, optional locks off)
+# ---------------------------------------------------------------------------
+
+_GIT_ENV = {"GIT_OPTIONAL_LOCKS": "0", "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C"}
+
+
+def _git(worktree: str, *args: str) -> str | None:
+    cmd = ["git", "-C", worktree, "--no-optional-locks", *args]
+    assert ("git", args[0]) in ALLOWED_COMMANDS, args[0]
+    try:
+        res = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=GIT_TIMEOUT,
+            env={**os.environ, **_GIT_ENV},
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return res.stdout if res.returncode == 0 else None
+
+
+def read_changes(worktree: str, branch: str | None) -> dict[str, Any] | None:
+    """Files changed on the task's branch, committed or not, against main."""
+    if not worktree or not os.path.isdir(worktree):
+        return None
+    head = _git(worktree, "rev-parse", "--abbrev-ref", "HEAD")
+    if head is None:
+        return None
+    if branch and head.strip() != branch:
+        # The folder now belongs to another task.
+        return None
+    base = None
+    for ref in ("origin/HEAD", "origin/main", "origin/master", "main", "master"):
+        out = _git(worktree, "merge-base", "HEAD", ref)
+        if out and out.strip():
+            base = out.strip()
+            break
+    files: dict[str, dict[str, Any]] = {}
+    if base:
+        numstat = _git(worktree, "diff", "--numstat", "-M", base) or ""
+        for line in numstat.splitlines():
+            parts = line.split("\t")
+            if len(parts) < 3:
+                continue
+            add = int(parts[0]) if parts[0].isdigit() else 0
+            rem = int(parts[1]) if parts[1].isdigit() else 0
+            path = parts[-1]
+            if " => " in path:
+                path = re.sub(r"\{[^}]* => ([^}]*)\}", r"\1", path)
+                path = path.split(" => ")[-1]
+            files[path] = {"path": path, "status": "M", "added": add, "removed": rem}
+        names = _git(worktree, "diff", "--name-status", "-M", base) or ""
+        for line in names.splitlines():
+            parts = line.split("\t")
+            if len(parts) >= 2 and parts[-1] in files:
+                files[parts[-1]]["status"] = parts[0][:1]
+    status = _git(worktree, "status", "--porcelain=v1", "-uall") or ""
+    for line in status.splitlines():
+        if line.startswith("?? "):
+            path = line[3:]
+            files.setdefault(
+                path, {"path": path, "status": "A", "added": 0, "removed": 0}
+            )
+    rows = sorted(files.values(), key=lambda r: r["path"])
+    return {
+        "branch": head.strip(),
+        "files": rows[:CHANGES_MAX_FILES],
+        "total_files": len(rows),
+        "added": sum(r["added"] for r in rows),
+        "removed": sum(r["removed"] for r in rows),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -524,6 +1021,10 @@ class FeedConfig:
     )
     client_patterns: tuple[str, ...] = DEFAULT_CLIENT_PATTERNS
     tz_name: str | None = None
+    # Claude Code transcripts; None leaves conversations out.
+    claude_projects: Path | None = None
+    # Read git status in ship worktrees for the Changes panel.
+    read_git: bool = True
 
 
 def local_tz_name() -> str | None:
@@ -576,9 +1077,20 @@ def _pr_number(url: str | None) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def _brief_excerpt(text: str) -> str:
+    """The captain's intent, or the Task section, of a crew brief."""
+    m = re.search(r"^## Captain's intent\s*\n([\s\S]*?)(?=^#{1,2} |\Z)", text, re.M)
+    if not m:
+        m = re.search(r"^# Task\s*\n([\s\S]*?)(?=^# |\Z)", text, re.M)
+    body = m.group(1) if m else text
+    return clean(body, BRIEF_CAP)
+
+
 @dataclass
 class FeedResult:
     fleet: dict[str, Any]
+    transcripts: dict[str, dict[str, Any]] = field(default_factory=dict)
+    changes: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 def _public(privacy: "Privacy", task_id: str, client: bool) -> str:
@@ -591,8 +1103,10 @@ def build_fleet(
     now: float | None = None,
     snapshot: dict[str, Any] | None = None,
     salt: bytes = b"cockpit",
+    cache: FeedCache | None = None,
 ) -> FeedResult:
     now = time.time() if now is None else now
+    cache = cache if cache is not None else FeedCache()
     tz_name = cfg.tz_name or local_tz_name()
     tz = _load_tz(tz_name)
     privacy = Privacy(cfg.client_patterns, salt)
@@ -614,6 +1128,8 @@ def build_fleet(
     agents: list[dict[str, Any]] = []
     waiting: list[dict[str, Any]] = []
     spaces: dict[str, dict[str, Any]] = {}
+    transcripts: dict[str, dict[str, Any]] = {}
+    changes: dict[str, dict[str, Any]] = {}
 
     def space_entry(raw: str) -> str:
         key = _space_key(raw)
@@ -651,7 +1167,33 @@ def build_fleet(
             open_decisions = snap_row["open"]
             state_source = "snapshot"
 
+        closed = row is not None and (row.checked or row.section == "done")
+        public_id = _public(privacy, task_id, client)
+        kept = cache.kept(public_id, cfg.out_dir) if closed and not client else None
+
+        # The agent's own conversation, trimmed (own projects only).
+        transcript_path = None
+        if not client and not closed and cfg.claude_projects is not None:
+            transcript_path = find_transcript(
+                cfg.claude_projects,
+                meta.get("worktree", ""),
+                spawned,
+                task_id=task_id,
+                state_dir=str(state_dir),
+                cache=cache,
+            )
+        entries: list[dict[str, Any]] = []
+        if transcript_path is not None:
+            entries = cache.entries(transcript_path)
+        elif kept is not None and kept["transcript"] is not None:
+            entries = [
+                e
+                for e in kept["transcript"].get("entries") or []
+                if isinstance(e, dict) and e.get("t") in ("user", "agent", "tool")
+            ]
+
         times = [t for t in (status_mtime, busy.get("ts")) if t]
+        times += [e["at"] for e in entries[-5:] if e.get("at")]
         last_activity = int(max(times)) if times else spawned
 
         last_event = events[-1] if events else None
@@ -672,7 +1214,6 @@ def build_fleet(
             state = last_event.verb
         else:
             state = "quiet"
-        closed = row is not None and (row.checked or row.section == "done")
         if closed and state in ("working", "quiet", "paused"):
             state = "done"
 
@@ -683,7 +1224,6 @@ def build_fleet(
         ):
             continue
 
-        public_id = _public(privacy, task_id, client)
         pr_url = None if client else _latest_pr(events, row)
         report = (data_dir / task_id / "report.md").is_file()
         status_line = None
@@ -703,6 +1243,36 @@ def build_fleet(
             if not report and kind == "scout":
                 quiet_note = (quiet_note + ", " if quiet_note else "") + "no report"
 
+        diff = None
+        if (
+            not client
+            and not closed
+            and cfg.read_git
+            and meta.get("branch")
+            and not meta.get("stale_worktree_reused_by_other_task")
+        ):
+            ch = cache.changes(meta.get("worktree", ""), meta.get("branch"), now)
+            if ch is not None:
+                changes[public_id] = {
+                    "schema": CHANGES_SCHEMA,
+                    "task_id": public_id,
+                    "generated_at": int(now),
+                    **ch,
+                }
+                diff = {
+                    "files": ch["total_files"],
+                    "added": ch["added"],
+                    "removed": ch["removed"],
+                }
+        if kept is not None and kept["changes"] is not None:
+            ch = kept["changes"]
+            changes[public_id] = ch
+            diff = {
+                "files": ch.get("total_files", 0),
+                "added": ch.get("added", 0),
+                "removed": ch.get("removed", 0),
+            }
+
         title = (row.title if row else "") or task_id
         agent = {
             "id": public_id,
@@ -711,6 +1281,9 @@ def build_fleet(
             "client": client,
             "kind": kind,
             "branch": None if client else meta.get("branch"),
+            "window": None if client else meta.get("window"),
+            "harness": None if client else meta.get("harness"),
+            "model": None if client else meta.get("model"),
             "state": state,
             "state_source": state_source,
             "closed": closed,
@@ -731,8 +1304,46 @@ def build_fleet(
             "pr": {"url": pr_url, "number": _pr_number(pr_url)} if pr_url else None,
             "report": report,
             "quiet_note": quiet_note,
+            "diff": diff,
+            "has_transcript": bool(entries),
         }
         agents.append(agent)
+
+        if kept is not None and kept["transcript"] is not None:
+            transcripts[public_id] = kept["transcript"]
+        elif not client:
+            items: list[dict[str, Any]] = []
+            brief = read_text(data_dir / task_id / "brief.md", 200_000)
+            if brief:
+                items.append(
+                    {"t": "brief", "at": spawned, "text": _brief_excerpt(brief)}
+                )
+            items.extend(entries)
+            for ev in events:
+                if ev.at is None:
+                    continue
+                items.append(
+                    {
+                        "t": "event",
+                        "at": ev.at,
+                        "verb": ev.verb,
+                        "key": ev.key,
+                        "text": one_line(scrub(ev.note), SUMMARY_CAP),
+                    }
+                )
+            items.sort(key=lambda e: e.get("at") or 0)
+            if items:
+                transcripts[public_id] = {
+                    "schema": TRANSCRIPT_SCHEMA,
+                    "task_id": public_id,
+                    "generated_at": int(now),
+                    "bound": transcript_path is not None,
+                    "entries": items[-TRANSCRIPT_MAX_ENTRIES:],
+                }
+        if not client and not closed:
+            cache.remember(
+                public_id, transcripts.get(public_id), changes.get(public_id)
+            )
 
         since_fallback = status_at or last_activity
         for d in open_decisions:
@@ -854,7 +1465,8 @@ def build_fleet(
         "queued_total": len(queued),
         "finished": finished,
     }
-    return FeedResult(fleet=fleet)
+    cache.sweep()
+    return FeedResult(fleet=fleet, transcripts=transcripts, changes=changes)
 
 
 def _load_tz(name: str | None) -> _dt.tzinfo | None:
@@ -923,6 +1535,60 @@ def write_fleet(out_dir: Path, result: FeedResult, previous: dict[str, bytes]) -
     return True
 
 
+def _same_bytes(path: Path, data: bytes) -> bool:
+    try:
+        return path.read_bytes() == data
+    except OSError:
+        return False
+
+
+def _stable_dump(obj: dict[str, Any], *volatile: str) -> bytes:
+    return _dump({k: v for k, v in obj.items() if k not in volatile})
+
+
+def write_outputs(out_dir: Path, result: FeedResult, previous: dict[str, bytes]) -> int:
+    """Write per agent files that changed, drop departed ones, then the fleet.
+
+    ``previous`` remembers what was last written, so unchanged files are not
+    rewritten. ``fleet.json`` goes last: a reader that sees its new version
+    finds the files it points at. Returns the number of files written.
+    """
+    written = 0
+    wanted: dict[str, tuple[bytes, bytes]] = {}
+    for sub, items in (
+        ("transcripts", result.transcripts),
+        ("changes", result.changes),
+    ):
+        for tid, data in items.items():
+            wanted[f"{sub}/{tid}.json"] = (
+                _stable_dump(data, "generated_at"),
+                _dump(data),
+            )
+    for rel, (key, data) in wanted.items():
+        if previous.get(rel) != key or not (out_dir / rel).exists():
+            if rel not in previous and _same_bytes(out_dir / rel, data):
+                previous[rel] = key
+                continue
+            _atomic_write_bytes(out_dir / rel, data)
+            previous[rel] = key
+            written += 1
+    for sub in ("transcripts", "changes"):
+        folder = out_dir / sub
+        if not folder.is_dir():
+            continue
+        for p in folder.glob("*.json"):
+            rel = f"{sub}/{p.name}"
+            if rel not in wanted:
+                previous.pop(rel, None)
+                try:
+                    p.unlink()
+                except OSError:
+                    pass
+    if write_fleet(out_dir, result, previous):
+        written += 1
+    return written
+
+
 # ---------------------------------------------------------------------------
 # Watch loop
 # ---------------------------------------------------------------------------
@@ -982,8 +1648,9 @@ class SnapshotPoller:
 def run(cfg: FeedConfig, args: argparse.Namespace) -> int:
     assert_safe_out_dir(cfg.out_dir, cfg.fm_home)
     cfg.out_dir.mkdir(parents=True, exist_ok=True)
-    salt = load_salt(cfg.out_dir)
+    salt = load_salt(Path(args.salt_file).expanduser(), legacy_out_dir=cfg.out_dir)
     previous: dict[str, bytes] = {}
+    cache = FeedCache()
     poller = None
     if not args.no_snapshot and not args.once:
         poller = SnapshotPoller(cfg.fm_home, args.snapshot_every, args.snapshot_retry)
@@ -995,8 +1662,10 @@ def run(cfg: FeedConfig, args: argparse.Namespace) -> int:
             snapshot = run_snapshot(cfg.fm_home)
         elif poller is not None:
             snapshot = poller.latest(max_age=args.snapshot_every * 2)
-        write_fleet(
-            cfg.out_dir, build_fleet(cfg, snapshot=snapshot, salt=salt), previous
+        write_outputs(
+            cfg.out_dir,
+            build_fleet(cfg, snapshot=snapshot, salt=salt, cache=cache),
+            previous,
         )
 
     if args.once:
@@ -1051,6 +1720,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="folder=Display name (repeatable)",
     )
     p.add_argument("--tz", default=None, help="IANA zone for dates")
+    p.add_argument(
+        "--claude-projects",
+        default=str(home / ".claude" / "projects"),
+        help="Claude Code transcripts folder; 'none' leaves conversations out",
+    )
+    p.add_argument("--no-git", action="store_true", help="skip worktree changes")
+    p.add_argument("--salt-file", default=str(default_salt_file()))
     p.add_argument("--once", action="store_true", help="write once and exit")
     p.add_argument("--no-snapshot", action="store_true")
     p.add_argument("--scan-every", type=float, default=5.0)
@@ -1073,6 +1749,10 @@ def config_from_args(args: argparse.Namespace) -> FeedConfig:
         space_names=names,
         client_patterns=tuple(args.client) if args.client else DEFAULT_CLIENT_PATTERNS,
         tz_name=args.tz,
+        claude_projects=None
+        if args.claude_projects == "none"
+        else Path(args.claude_projects).expanduser(),
+        read_git=not args.no_git,
     )
 
 

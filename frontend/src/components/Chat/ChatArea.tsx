@@ -11,7 +11,11 @@ import { listConnectors } from '../../lib/connectors-api';
 import { HeroBackdrop, PhotoCredit } from '../HeroPhoto';
 import { modKey } from '../HintBar';
 
-export function ChatArea() {
+/**
+ * The chat. `docked` fits it into the Crew page's side panel: no title bar,
+ * no data sources banner, a short empty state instead of the hero photo.
+ */
+export function ChatArea({ docked = false }: { docked?: boolean } = {}) {
   const activeId = useAppStore((s) => s.activeId);
   const messages = useAppStore((s) => s.messages);
   const streamState = useAppStore((s) => s.streamState);
@@ -137,6 +141,7 @@ export function ChatArea() {
   return (
     <div className="flex flex-col h-full">
       {/* Title bar */}
+      {!docked && (
       <div
         className={`flex items-center gap-3 ${sidebarOpen ? 'pl-16 md:pl-8' : 'pl-16'} pr-4 shrink-0`}
         style={{ height: 60, borderBottom: '1px solid var(--color-border)' }}
@@ -159,9 +164,10 @@ export function ChatArea() {
           <PanelIcon size={16} strokeWidth={1.5} />
         </button>
       </div>
+      )}
 
       {/* Data sources banner */}
-      {hasConnectedSources === false && !bannerDismissed && !isEmpty && (
+      {!docked && hasConnectedSources === false && !bannerDismissed && !isEmpty && (
         <div
           className="mx-6 mt-4 flex items-center gap-3 pl-4 pr-2 py-2.5 rounded-xl text-[13px] shrink-0"
           style={{
@@ -195,7 +201,13 @@ export function ChatArea() {
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto"
       >
-        {isEmpty ? (
+        {isEmpty && docked ? (
+          <div className="px-5 py-6">
+            <p className="sn-lede text-[22px]">
+              <b>Ask Seneca.</b> It answers from this machine; decisions and merges stay in Claude Code.
+            </p>
+          </div>
+        ) : isEmpty ? (
           <div className="h-full px-6 py-6 flex">
             <section className="relative flex-1 min-h-[360px] overflow-hidden flex flex-col justify-end sn-card" style={{ borderRadius: 'var(--radius-2xl)' }}>
               <HeroBackdrop position="center 60%" />
@@ -230,7 +242,7 @@ export function ChatArea() {
             </section>
           </div>
         ) : (
-          <div className="max-w-[var(--chat-max-width)] mx-auto px-6 py-10">
+          <div className={docked ? 'px-4 py-5' : 'max-w-[var(--chat-max-width)] mx-auto px-6 py-10'}>
             {messages.map((msg, i) => {
               const isLastAssistant =
                 i === messages.length - 1 && msg.role === 'assistant';
@@ -257,7 +269,7 @@ export function ChatArea() {
           </div>
         )}
       </div>
-      <InputArea />
+      <InputArea compact={docked} />
     </div>
   );
 }

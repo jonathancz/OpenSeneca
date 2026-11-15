@@ -1,12 +1,12 @@
 import { create } from 'zustand';
 import { apiFetch, getBase } from './api';
 import { buildWsProtocols } from './useAgentEvents';
-import type { FleetResponse } from './crew';
+import type { CrewChanges, CrewTranscript, FleetResponse, NudgeStatus } from './crew';
 import type { LiveSocket } from './crew-live';
 
 /*
- * Read only client for the crew cockpit. The only request is a GET of the
- * fleet; the live socket only listens. Nothing is ever sent toward the crew.
+ * Read only client for the crew cockpit. Every request is a GET and the live
+ * socket only listens. Nothing is ever sent toward the crew.
  */
 
 async function getJson<T>(path: string): Promise<T> {
@@ -16,6 +16,14 @@ async function getJson<T>(path: string): Promise<T> {
 }
 
 export const fetchFleet = () => getJson<FleetResponse>('/v1/cockpit/fleet');
+
+export const fetchTranscript = (id: string) =>
+  getJson<CrewTranscript>(`/v1/cockpit/agents/${encodeURIComponent(id)}/transcript`);
+
+export const fetchChanges = (id: string) =>
+  getJson<CrewChanges>(`/v1/cockpit/agents/${encodeURIComponent(id)}/changes`);
+
+export const fetchNudges = () => getJson<NudgeStatus>('/v1/cockpit/nudges');
 
 export function crewLiveUrl(): string {
   const base = getBase();

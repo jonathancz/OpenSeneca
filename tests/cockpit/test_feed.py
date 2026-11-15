@@ -1,9 +1,11 @@
-"""Tests for the cockpit feeder: parsing, privacy, the board's data, read only use."""
+"""Tests for the cockpit feeder: parsing, privacy, the board's data, trimming,
+changes, and read only use."""
 
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -19,12 +21,57 @@ from openjarvis.cockpit.feed import (
     parse_backlog,
     parse_status_line,
     parse_status_log,
+    project_slug,
+    read_changes,
     scrub,
+    tool_summary,
+    trim_transcript,
     write_fleet,
+    write_outputs,
 )
 
 NOW = 1_794_700_000  # 2026-11-15, a Sunday morning in Paris
 DAY = 86_400
+
+
+def _git(cwd: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(cwd), *args],
+        check=True,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "GIT_AUTHOR_NAME": "t",
+            "GIT_AUTHOR_EMAIL": "t@example.invalid",
+            "GIT_COMMITTER_NAME": "t",
+            "GIT_COMMITTER_EMAIL": "t@example.invalid",
+        },
+    ).stdout
+
+
+def make_repo(root: Path, branch: str) -> Path:
+    repo = root / "worktree"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / "a.txt").write_text("one\n")
+    _git(repo, "add", "a.txt")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "checkout", "-q", "-b", branch)
+    (repo / "a.txt").write_text("one\ntwo\nthree\n")
+    _git(repo, "commit", "-q", "-am", "work")
+    (repo / "new.txt").write_text("untracked\n")
+    return repo
+
+
+def jsonl(*records: dict) -> str:
+    return "\n".join(json.dumps(r) for r in records) + "\n"
+
+
+def iso(epoch: float) -> str:
+    import datetime as dt
+
+    return dt.datetime.fromtimestamp(epoch, dt.timezone.utc).isoformat()
 
 
 @pytest.fixture
@@ -36,8 +83,7 @@ def fm(tmp_path: Path) -> dict:
     data.mkdir()
     (home / "config").mkdir()
     (home / "config" / "backend").write_text("tmux\n")
-    repo = tmp_path / "worktree"
-    repo.mkdir()
+    repo = make_repo(tmp_path, "fm/alpha")
     spawn = NOW - 3600
 
     (state / "alpha.meta").write_text(
@@ -107,10 +153,99 @@ def fm(tmp_path: Path) -> dict:
         "- [x] client-done - belit work (repo: belit) (kind: ship) (done 2026-11-14)\n"
     )
 
+    projects = tmp_path / "claude-projects"
+    folder = projects / project_slug(str(repo))
+    folder.mkdir(parents=True)
+    (folder / "sess.jsonl").write_text(
+        jsonl(
+            {"type": "mode", "mode": "normal"},
+            {
+                "type": "user",
+                "timestamp": iso(spawn + 10),
+                "message": {
+                    "role": "user",
+                    "content": "Firstmate input: read the brief"
+                    "<system-reminder>hidden reminder</system-reminder>",
+                },
+            },
+            {
+                "type": "assistant",
+                "timestamp": iso(spawn + 20),
+                "message": {
+                    "content": [
+                        {"type": "thinking", "thinking": "private thoughts"},
+                        {"type": "text", "text": "Reading the brief now."},
+                        {
+                            "type": "tool_use",
+                            "name": "Bash",
+                            "input": {
+                                "command": f"cat {state}/alpha.status && cat ~/.env",
+                                "description": "Read the status log",
+                            },
+                        },
+                        {
+                            "type": "tool_use",
+                            "name": "Read",
+                            "input": {"file_path": "/repo/src/secret_module.py"},
+                        },
+                    ]
+                },
+            },
+            {
+                "type": "user",
+                "timestamp": iso(spawn + 21),
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "content": "FILE CONTENT key=sk-livekeyabcdefghijklmnop",
+                        }
+                    ]
+                },
+            },
+            {
+                "type": "assistant",
+                "isSidechain": True,
+                "timestamp": iso(spawn + 22),
+                "message": {"content": [{"type": "text", "text": "sidechain"}]},
+            },
+            {
+                "type": "assistant",
+                "timestamp": iso(spawn + 30),
+                "message": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Use OPENAI_API_KEY=abc123secretvalue please.",
+                        }
+                    ]
+                },
+            },
+        )
+    )
+    # A later session in the same folder that belongs to another task.
+    (folder / "other.jsonl").write_text(
+        jsonl(
+            {
+                "type": "user",
+                "timestamp": iso(spawn + 2000),
+                "message": {
+                    "content": f"echo done >> {state}/someone-else.status "
+                    f"{state}/someone-else.status"
+                },
+            },
+            {
+                "type": "assistant",
+                "timestamp": iso(spawn + 2001),
+                "message": {"content": [{"type": "text", "text": "not alpha"}]},
+            },
+        )
+    )
     return {
         "home": home,
         "state": state,
         "repo": repo,
+        "projects": projects,
         "out": tmp_path / "out",
         "spawn": spawn,
     }
@@ -121,6 +256,7 @@ def cfg_for(fm: dict) -> FeedConfig:
         fm_home=fm["home"],
         out_dir=fm["out"],
         tz_name="Europe/Paris",
+        claude_projects=fm["projects"],
     )
 
 
@@ -227,7 +363,100 @@ def test_scrub_keeps_ordinary_text():
     assert scrub(text) == text
 
 
-def test_feeder_runs_no_command_but_the_snapshot(fm, monkeypatch):
+def test_tool_summary_never_carries_commands_or_contents():
+    assert (
+        tool_summary("Bash", {"command": "cat secret", "description": "List"}) == "List"
+    )
+    assert tool_summary("Bash", {"command": "cat secret"}) == "shell command"
+    assert tool_summary("Read", {"file_path": "/a/b/c.py"}) == "c.py"
+    assert (
+        tool_summary("WebFetch", {"url": "https://example.com/x?q=1"}) == "example.com"
+    )
+    assert tool_summary("mcp__x__y", {"payload": "secret"}) == ""
+
+
+# ---------------------------------------------------------------------------
+# Transcripts
+# ---------------------------------------------------------------------------
+
+
+def test_trim_transcript_keeps_messages_and_tool_names_only(fm):
+    path = fm["projects"] / project_slug(str(fm["repo"])) / "sess.jsonl"
+    entries = trim_transcript(path)
+    blob = json.dumps(entries)
+    assert [e["t"] for e in entries] == ["user", "agent", "tool", "tool", "agent"]
+    assert entries[0]["text"] == "Firstmate input: read the brief"
+    assert entries[2] == {
+        "t": "tool",
+        "at": entries[2]["at"],
+        "name": "Bash",
+        "summary": "Read the status log",
+    }
+    assert entries[3]["summary"] == "secret_module.py"
+    for leaked in (
+        "hidden reminder",
+        "private thoughts",
+        "FILE CONTENT",
+        "sk-live",
+        "sidechain",
+        "cat ~/.env",
+        "abc123secretvalue",
+    ):
+        assert leaked not in blob
+
+
+def test_transcript_binding_needs_the_tasks_own_state_files(fm):
+    path = feed.find_transcript(
+        fm["projects"],
+        str(fm["repo"]),
+        fm["spawn"],
+        task_id="alpha",
+        state_dir=str(fm["state"]),
+    )
+    assert path is not None and path.name == "sess.jsonl"
+    other = feed.find_transcript(
+        fm["projects"],
+        str(fm["repo"]),
+        fm["spawn"],
+        task_id="someone-else",
+        state_dir=str(fm["state"]),
+    )
+    assert other is not None and other.name == "other.jsonl"
+    # Started before the task was spawned: not bound.
+    assert (
+        feed.find_transcript(
+            fm["projects"],
+            str(fm["repo"]),
+            fm["spawn"] + 10_000,
+            task_id="alpha",
+            state_dir=str(fm["state"]),
+        )
+        is None
+    )
+
+
+# ---------------------------------------------------------------------------
+# Changes
+# ---------------------------------------------------------------------------
+
+
+def test_read_changes_against_main_without_touching_the_index(fm):
+    repo = fm["repo"]
+    index = repo / ".git" / "index"
+    before = (index.stat().st_mtime_ns, index.read_bytes())
+    ch = read_changes(str(repo), "fm/alpha")
+    assert ch is not None
+    files = {f["path"]: f for f in ch["files"]}
+    assert files["a.txt"] == {"path": "a.txt", "status": "M", "added": 2, "removed": 0}
+    assert files["new.txt"]["status"] == "A"
+    assert (ch["total_files"], ch["added"], ch["removed"]) == (2, 2, 0)
+    assert (index.stat().st_mtime_ns, index.read_bytes()) == before
+    assert not (repo / ".git" / "index.lock").exists()
+    # The folder now holds another task's branch.
+    assert read_changes(str(repo), "fm/other") is None
+
+
+def test_feeder_runs_only_allowed_read_commands(fm, monkeypatch):
     seen: list[list[str]] = []
     real_run = subprocess.run
 
@@ -237,16 +466,21 @@ def test_feeder_runs_no_command_but_the_snapshot(fm, monkeypatch):
 
     monkeypatch.setattr(feed.subprocess, "run", spy)
     build_fleet(cfg_for(fm), now=NOW)
-    assert seen == []
-
-
-# ---------------------------------------------------------------------------
-# The fleet
-# ---------------------------------------------------------------------------
+    assert seen, "expected git reads"
+    for cmd in seen:
+        assert cmd[0] == "git" and cmd[2] == str(fm["repo"])
+        assert cmd[3] == "--no-optional-locks"
+        assert ("git", cmd[4]) in feed.ALLOWED_COMMANDS
 
 
 def test_build_fleet_states_waiting_backlog_and_finished(fm):
-    fleet = build_fleet(cfg_for(fm), now=NOW, salt=b"s" * 32).fleet
+    res = build_fleet(cfg_for(fm), now=NOW, salt=b"s" * 32)
+    fleet = res.fleet
+    assert set(res.transcripts) == {"alpha", "gamma"}
+    t = res.transcripts["alpha"]["entries"]
+    assert t[0]["t"] == "brief" and t[0]["text"] == "Build the crew home."
+    assert any(e["t"] == "event" and e.get("key") == "pick-a" for e in t)
+    assert set(res.changes) == {"alpha"}
     assert fleet["schema"] == feed.SCHEMA and fleet["source"] == "records"
     assert fleet["backend"] == "tmux" and fleet["tz"] == "Europe/Paris"
     assert fleet["today"] == "2026-11-15"
@@ -256,6 +490,9 @@ def test_build_fleet_states_waiting_backlog_and_finished(fm):
     assert alpha["state"] == "needs" and alpha["space"] == "openseneca"
     assert alpha["title"] == "Crew home for Seneca"
     assert alpha["branch"] == "fm/alpha" and alpha["closed"] is False
+    assert alpha["window"] == "firstmate:fm-alpha"
+    assert alpha["diff"] == {"files": 2, "added": 2, "removed": 0}
+    assert alpha["has_transcript"] is True
     assert alpha["pr"] == {"url": "https://github.com/o/r/pull/7", "number": 7}
     assert alpha["decisions"][0]["key"] == "pick-a"
     assert alpha["last_activity"] >= fm["spawn"] + 610
@@ -286,6 +523,98 @@ def test_build_fleet_states_waiting_backlog_and_finished(fm):
         "Faster status poll",
     ]
     assert fleet["finished"][1]["pr"]["number"] == 5
+
+
+def test_unchanged_files_are_not_read_again(fm, monkeypatch):
+    reads: list[str] = []
+    for name in ("transcript_start", "transcript_owner", "trim_transcript"):
+        real = getattr(feed, name)
+
+        def spy(*a, _real=real, _name=name, **kw):
+            reads.append(_name)
+            return _real(*a, **kw)
+
+        monkeypatch.setattr(feed, name, spy)
+    real_run = subprocess.run
+    git_calls: list[list[str]] = []
+
+    def run_spy(cmd, *a, **kw):
+        git_calls.append(list(cmd))
+        return real_run(cmd, *a, **kw)
+
+    monkeypatch.setattr(feed.subprocess, "run", run_spy)
+    cache = feed.FeedCache()
+    first = build_fleet(cfg_for(fm), now=NOW, cache=cache)
+    assert "trim_transcript" in reads and git_calls
+    reads.clear()
+    git_calls.clear()
+    second = build_fleet(cfg_for(fm), now=NOW + 5, cache=cache)
+    assert reads == [] and git_calls == []
+    assert (
+        second.transcripts["alpha"]["entries"] == first.transcripts["alpha"]["entries"]
+    )
+    assert second.changes["alpha"]["files"] == first.changes["alpha"]["files"]
+
+    session = fm["projects"] / project_slug(str(fm["repo"])) / "sess.jsonl"
+    with open(session, "a") as fh:
+        fh.write(
+            jsonl(
+                {
+                    "type": "assistant",
+                    "timestamp": iso(fm["spawn"] + 40),
+                    "message": {"content": [{"type": "text", "text": "Later."}]},
+                }
+            )
+        )
+    _git(fm["repo"], "add", "new.txt")
+    third = build_fleet(cfg_for(fm), now=NOW + 10, cache=cache)
+    assert "trim_transcript" in reads and git_calls
+    texts = [e.get("text") for e in third.transcripts["alpha"]["entries"]]
+    assert "Later." in texts
+
+
+def _close_alpha(fm: dict) -> None:
+    backlog = fm["home"] / "data" / "backlog.md"
+    backlog.write_text(
+        backlog.read_text().replace(
+            "- [ ] alpha - Crew home", "- [x] alpha - Crew home"
+        )
+    )
+
+
+def _output_state(out: Path) -> dict[str, tuple[bytes, int]]:
+    return {
+        rel: ((out / rel).read_bytes(), (out / rel).stat().st_mtime_ns)
+        for rel in ("transcripts/alpha.json", "changes/alpha.json")
+    }
+
+
+def test_closing_a_task_keeps_its_files_untouched(fm, monkeypatch):
+    cache = feed.FeedCache()
+    previous: dict[str, bytes] = {}
+    open_res = build_fleet(cfg_for(fm), now=NOW, cache=cache)
+    write_outputs(fm["out"], open_res, previous)
+    before = _output_state(fm["out"])
+    open_alpha = {a["id"]: a for a in open_res.fleet["agents"]}["alpha"]
+
+    _close_alpha(fm)
+    (fm["state"] / "alpha.status").write_text(
+        (fm["state"] / "alpha.status").read_text()
+        + f"done [at={fm['spawn'] + 1200}]: merged\n"
+    )
+    monkeypatch.setattr(
+        feed, "trim_transcript", lambda *a, **k: pytest.fail("transcript read")
+    )
+    monkeypatch.setattr(feed, "read_changes", lambda *a, **k: pytest.fail("git read"))
+    for step, use_cache in ((1, cache), (2, cache), (3, feed.FeedCache())):
+        res = build_fleet(cfg_for(fm), now=NOW + step * 60, cache=use_cache)
+        alpha = {a["id"]: a for a in res.fleet["agents"]}["alpha"]
+        assert alpha["closed"] is True
+        assert alpha["has_transcript"] is True
+        assert alpha["diff"] == open_alpha["diff"]
+        assert alpha["last_activity"] >= open_alpha["last_activity"]
+        write_outputs(fm["out"], res, previous if use_cache is cache else {})
+        assert _output_state(fm["out"]) == before
 
 
 def test_in_flight_rows_without_an_agent_are_kept(fm):
@@ -322,6 +651,22 @@ def test_client_projects_leave_only_name_and_state(fm):
         "hold-client",
     ):
         assert leaked not in blob
+    res = build_fleet(cfg_for(fm), now=NOW, salt=b"s" * 32)
+    beta_id = [a["id"] for a in res.fleet["agents"] if a["client"]][0]
+    assert beta_id not in res.transcripts and beta_id not in res.changes
+
+
+def test_write_outputs_skips_unchanged_and_removes_departed(fm):
+    res = build_fleet(cfg_for(fm), now=NOW)
+    previous: dict[str, bytes] = {}
+    first = write_outputs(fm["out"], res, previous)
+    assert first == len(res.transcripts) + len(res.changes) + 1
+    later = build_fleet(cfg_for(fm), now=NOW + 1)
+    assert write_outputs(fm["out"], later, previous) == 0
+    later.transcripts.pop("gamma")
+    write_outputs(fm["out"], later, previous)
+    assert not (fm["out"] / "transcripts" / "gamma.json").exists()
+    assert not list(fm["out"].rglob(".*.json.*"))
 
 
 def test_snapshot_is_preferred_when_it_succeeds(fm):
@@ -391,6 +736,10 @@ def test_feed_run_leaves_firstmate_home_untouched(fm):
             str(fm["home"]),
             "--out",
             str(fm["out"]),
+            "--claude-projects",
+            str(fm["projects"]),
+            "--salt-file",
+            str(fm["out"].parent / "state" / "cockpit.salt"),
             "--once",
             "--no-snapshot",
         ]
@@ -399,7 +748,28 @@ def test_feed_run_leaves_firstmate_home_untouched(fm):
     assert _tree_digest(fm["home"]) == before
     fleet = json.loads((fm["out"] / "fleet.json").read_text())
     assert fleet["schema"] == feed.SCHEMA
-    assert sorted(p.name for p in fm["out"].iterdir()) == [".salt", "fleet.json"]
+    assert sorted(p.name for p in fm["out"].iterdir()) == [
+        "changes",
+        "fleet.json",
+        "transcripts",
+    ]
+    assert (fm["out"] / "transcripts" / "alpha.json").is_file()
+    assert (fm["out"] / "changes" / "alpha.json").is_file()
+
+
+def test_salt_lives_outside_the_mounted_folder(tmp_path):
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / ".salt").write_bytes(b"x" * 32)
+    salt_file = tmp_path / "state" / "cockpit.salt"
+    # An older feeder's salt is moved out once, so client ids stay stable.
+    assert feed.load_salt(salt_file, legacy_out_dir=out) == b"x" * 32
+    assert not (out / ".salt").exists()
+    assert salt_file.read_bytes() == b"x" * 32
+    assert salt_file.stat().st_mode & 0o777 == 0o600
+    assert feed.load_salt(salt_file, legacy_out_dir=out) == b"x" * 32
+    fresh = feed.load_salt(tmp_path / "other.salt")
+    assert len(fresh) == 32 and fresh != b"x" * 32
 
 
 def test_out_dir_inside_firstmate_home_is_refused(fm):

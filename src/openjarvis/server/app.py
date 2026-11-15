@@ -489,7 +489,7 @@ def create_app(
     # Rotating hero photography for the web UI (Unsplash, cached locally).
     install_hero_images(app)
 
-    # Crew cockpit: read only views of firstmate's records.
+    # Crew cockpit: read only views of firstmate's records, Discord nudges.
     install_cockpit(app)
 
     # Restore SendBlue channel bindings from database on startup
