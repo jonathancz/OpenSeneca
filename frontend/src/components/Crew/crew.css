@@ -166,7 +166,7 @@
 /* Split view and the live terminal mirror */
 .cw-split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .cw-split > .cw-panes { min-width: 0; }
-@media (max-width: 900px) { .cw-split { grid-template-columns: minmax(0, 1fr); } .cw-split > .cw-panes:nth-child(2) { display: none; } }
+@media (max-width: 900px) { .cw-split { grid-template-columns: minmax(0, 1fr); } }
 .cw-panes[data-compact='true'] { grid-template-columns: minmax(0, 1fr); }
 .cw-ghost:disabled { opacity: 0.4; cursor: default; }
 .cw-seg { display: inline-flex; padding: 2px; border-radius: 999px; border: 1px solid var(--color-border); margin-right: 6px; }

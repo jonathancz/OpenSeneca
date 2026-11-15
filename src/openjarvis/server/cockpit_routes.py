@@ -7,10 +7,6 @@ the folder is mounted read only (``deploy/docker/docker-compose.cockpit.yml``)
 and its path given in ``OPENJARVIS_COCKPIT_DIR``; otherwise it is
 ``<data dir>/cockpit``.
 
-The only thing this server writes for the cockpit is an empty marker file per
-agent in its own demand folder (``OPENJARVIS_COCKPIT_DEMAND_DIR``), which tells
-the feeder that a browser tab is watching that agent's live terminal mirror.
-
 Every HTTP route here is a GET. Nothing in this module can reach firstmate,
 tmux, git or GitHub: the cockpit is read only toward the crew, and decisions
 and merges stay in Claude Code. ``tests/server/test_cockpit_routes.py`` lists
@@ -39,7 +35,6 @@ from openjarvis.cockpit.nudges import CAPTAIN_CHANNEL, NudgeRunner
 logger = logging.getLogger(__name__)
 
 COCKPIT_DIR_ENV = "OPENJARVIS_COCKPIT_DIR"
-DEMAND_DIR_ENV = "OPENJARVIS_COCKPIT_DEMAND_DIR"
 # A capture older than this is not shown as live.
 TERMINAL_FRESH_SECONDS = 30
 NUDGES_ENV = "OPENJARVIS_COCKPIT_NUDGES"
@@ -60,15 +55,6 @@ def default_cockpit_dir() -> Path:
     from openjarvis.core.paths import get_data_dir
 
     return get_data_dir() / "cockpit"
-
-
-def default_demand_dir() -> Path:
-    env = os.environ.get(DEMAND_DIR_ENV, "").strip()
-    if env:
-        return Path(env).expanduser()
-    from openjarvis.core.paths import get_data_dir
-
-    return get_data_dir() / "cockpit-demand"
 
 
 def _dir(request: Request | WebSocket) -> Path:
@@ -134,10 +120,8 @@ def get_changes(agent_id: str, request: Request) -> dict[str, Any]:
 def get_terminal(agent_id: str, request: Request) -> dict[str, Any]:
     """The latest view only capture of an agent's terminal.
 
-    Asking for it is what keeps it coming: the route touches
-    ``<demand dir>/<agent id>`` (Seneca's own folder, never the crew's), and
-    the host feeder captures only panes asked for in the last few seconds.
-    Client projects have no mirror.
+    Only reads ``terminals/<id>.json``: the host feeder decides on its own
+    which live agents to capture. Client projects have no mirror.
     """
     if not _ID.match(agent_id) or ".." in agent_id:
         raise HTTPException(status_code=404, detail="unknown agent")
@@ -147,24 +131,13 @@ def get_terminal(agent_id: str, request: Request) -> dict[str, Any]:
     )
     if agent is None or agent.get("client") or not agent.get("window"):
         raise HTTPException(status_code=404, detail="no live mirror for this agent")
-    demand_dir = Path(
-        getattr(request.app.state, "cockpit_demand_dir", None) or default_demand_dir()
-    )
-    asked = True
-    try:
-        mark = demand_dir / agent_id
-        mark.touch(exist_ok=True)
-        os.utime(mark)
-    except OSError:
-        asked = False
     data = _read_json(_dir(request) / "terminals" / f"{agent_id}.json")
     captured = float((data or {}).get("captured_at") or 0)
     if data is None or time.time() - captured > TERMINAL_FRESH_SECONDS:
         return {
             "available": False,
-            "reason": "Waiting for the first capture from the feeder."
-            if asked
-            else "Seneca cannot ask the feeder for a mirror (demand folder).",
+            "reason": "No live capture: the feeder mirrors agents active in "
+            "the last 10 minutes.",
         }
     return {"available": True, **data}
 
@@ -238,7 +211,6 @@ def install_cockpit(
     cockpit_dir: Path | None = None,
     state_path: Path | None = None,
     start_nudges: bool = True,
-    demand_dir: Path | None = None,
 ) -> None:
     """Attach the cockpit routes and, when enabled, the Discord nudge runner.
 
@@ -247,7 +219,6 @@ def install_cockpit(
     Seneca's own data dir, never in the read only folder.
     """
     app.state.cockpit_dir = cockpit_dir or default_cockpit_dir()
-    app.state.cockpit_demand_dir = demand_dir or default_demand_dir()
     app.state.cockpit_nudges = None
     app.include_router(router)
     if not nudges_enabled():

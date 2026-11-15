@@ -3,18 +3,13 @@
 #   docker compose -f deploy/docker/docker-compose.yml \
 #     -f deploy/docker/docker-compose.cockpit.yml up -d
 #
-# The host feeder (scripts/cockpit-feed/) writes the cockpit JSON from firstmate's
-# records into OPENSENECA_COCKPIT_DIR. Only that folder is mounted, read only,
-# plus a small demand folder for live terminal requests: never the firstmate
-# home, tmux, ~/.claude or any git credentials. Start the feeder first so both
-# folders exist with the right owner and mode.
+# The host feeder (scripts/cockpit-feed/) writes the cockpit JSON, including the
+# view only terminal mirrors, from firstmate's records into
+# OPENSENECA_COCKPIT_DIR. Only that folder is mounted, read only: never the
+# firstmate home, tmux, ~/.claude or any git credentials.
 services:
   jarvis:
     environment:
       - OPENJARVIS_COCKPIT_DIR=/home/openjarvis/cockpit
-      - OPENJARVIS_COCKPIT_DEMAND_DIR=/home/openjarvis/cockpit-demand
     volumes:
       - ${OPENSENECA_COCKPIT_DIR:-${HOME}/.local/share/openseneca/cockpit}:/home/openjarvis/cockpit:ro
-      # Empty marker files only: which agents' live terminal a browser tab is
-      # watching. The feeder reads the names and captures those panes read only.
-      - ${OPENSENECA_COCKPIT_DEMAND_DIR:-${HOME}/.local/share/openseneca/cockpit-demand}:/home/openjarvis/cockpit-demand

@@ -17,8 +17,17 @@ import {
   pruneTabs,
   toggleSplit,
 } from '../lib/crew-tabs';
+import { SPLIT_QUERY, besidePane, splitFits, watchSplitFits } from '../lib/split-view';
 import { modKey } from '../components/HintBar';
 import '../components/Crew/crew.css';
+
+function splitQuery() {
+  try {
+    return window.matchMedia(SPLIT_QUERY);
+  } catch {
+    return null;
+  }
+}
 
 function wideScreen(): boolean {
   try {
@@ -42,6 +51,9 @@ export function CrewPage() {
   const [tabs, setTabs] = useState<CrewTabs>(initialTabs);
   const [dock, setDock] = useState(wideScreen);
   const [nudges, setNudges] = useState<NudgeStatus | null>(null);
+  const [splitRoom, setSplitRoom] = useState(() => splitFits(splitQuery()));
+
+  useEffect(() => watchSplitFits(splitQuery(), setSplitRoom), []);
 
   useEffect(() => {
     const t = setInterval(() => setNowMs(Date.now()), 30_000);
@@ -99,7 +111,8 @@ export function CrewPage() {
   const sinceFetch = loadedAt ? Math.max(0, Math.floor((nowMs - loadedAt) / 1000)) : 0;
   const ageSeconds = response.age_seconds != null ? response.age_seconds + sinceFetch : null;
   const current = tabs.current === BOARD ? null : fleet.agents.find((a) => a.id === tabs.current) ?? null;
-  const beside = current && tabs.split ? fleet.agents.find((a) => a.id === tabs.split) ?? null : null;
+  const besideId = besidePane(tabs.split, current?.id ?? null, splitRoom);
+  const beside = besideId ? fleet.agents.find((a) => a.id === besideId) ?? null : null;
 
   return (
     <div className="cw-shell" data-dock={dock ? 'open' : 'closed'}>

@@ -30,12 +30,12 @@ standard library only).
 * Runs `git status` and `git diff --numstat` against main in each ship task's
   worktree, with optional locks off so not even the index is refreshed, and
   only while the worktree is still on the task's branch. `--no-git` skips it.
-* Asks GitHub, read only, whether a task's PR merged (`gh pr view <url>
-  --json state,mergedAt`), only when firstmate's own merge record
-  (`state/<id>.pr-poll-merge-notified`) does not already say so; answers are
-  cached (merged or closed forever, open for 30 minutes). `--no-github` skips
-  it. A task whose PR merged counts as finished and leaves the board seven
-  days later.
+* Treats a task's PR as merged only from firstmate's own records: the merge
+  poll's `state/<id>.pr-poll-merge-notified`, a `merged=` line in
+  `state/<id>.meta`, or a status line mentioning `merge-landed`
+  (`state/<id>.merge-authority` is permission to merge, not a merge, and is
+  ignored). It never asks GitHub. A task whose PR merged counts as finished
+  and leaves the board seven days later.
 * Writes `fleet.json`, `transcripts/<id>.json` and `changes/<id>.json`
   (atomically, only when they changed) in `OPENSENECA_COCKPIT_DIR`, default
   `~/.local/share/openseneca/cockpit`. It refuses an output folder inside the
@@ -48,16 +48,14 @@ standard library only).
 
 ## Live terminal mirror
 
-While an agent's Live view is open in a browser, Seneca touches an empty file
-named after the agent in `OPENSENECA_COCKPIT_DEMAND_DIR` (default
-`~/.local/share/openseneca/cockpit-demand`, created with mode 1733 so the
-container's user can add entries but not list or remove others). The feeder
-captures only those agents' panes, about every 2 s, with
-`tmux capture-pane -p -e` (printed to stdout, never into a tmux buffer), and
-writes `terminals/<id>.json`, secrets redacted. Nothing else ever reaches
+The feeder decides on its own which panes to mirror; Seneca sends it nothing
+and its container only reads the cockpit folder. It captures live
+own-project agents (working, or not closed, not done and active in the last
+10 minutes), at most 5 of them, most recent activity first, about every 2 s,
+with `tmux capture-pane -p -e` (printed to stdout, never into a tmux buffer),
+and writes `terminals/<id>.json`, secrets redacted. Nothing else ever reaches
 tmux: no `send-keys`, no attach, no resize. Client projects are never
-mirrored. Closing the view stops the captures within 15 s. `--no-terminals`
-turns the mirror off.
+mirrored. `--no-terminals` turns the mirror off.
 
 It watches with a cheap `stat` scan every 5 s, debounces changes for 2 s, and
 rewrites the fleet at least once a minute, all under `nice -n 19`.
@@ -95,7 +93,7 @@ merges stay in Claude Code.
 
 * `GET /v1/cockpit/fleet`, `GET /v1/cockpit/agents/{id}/transcript`,
   `GET /v1/cockpit/agents/{id}/changes`, `GET /v1/cockpit/agents/{id}/terminal`
-  (the latest mirror capture; asking for it is what keeps captures coming),
+  (the latest mirror capture, read from `terminals/<id>.json`),
   and `GET /v1/cockpit/nudges` (the nudge rules and whether the Discord
   channel is ready).
 * `/v1/cockpit/live` tells the browser when `fleet.json` changed.

@@ -148,8 +148,8 @@ describe('live terminal', () => {
     expect(html).not.toMatch(/<(input|textarea)/);
     expect(renderToStaticMarkup(<LiveTerminal terminal={null} />)).toContain('Connecting to the live terminal');
     expect(
-      renderToStaticMarkup(<LiveTerminal terminal={{ available: false, reason: 'Waiting for the first capture from the feeder.' }} />),
-    ).toContain('Waiting for the first capture');
+      renderToStaticMarkup(<LiveTerminal terminal={{ available: false, reason: 'No live capture: the feeder mirrors agents active in the last 10 minutes.' }} />),
+    ).toContain('No live capture');
   });
 
   it('drops the side panel in split view', () => {

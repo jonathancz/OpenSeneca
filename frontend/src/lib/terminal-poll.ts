@@ -1,7 +1,6 @@
 /**
- * Polls an agent's live terminal mirror while its Live view is open. Each
- * request is also what asks the host feeder to keep capturing that pane, so
- * the poll stops the moment the view closes. One request at a time.
+ * Polls an agent's live terminal mirror while its Live view is open, and
+ * stops the moment the view closes. One request at a time.
  */
 export interface TerminalPollDeps<T> {
   fetch: () => Promise<T>;

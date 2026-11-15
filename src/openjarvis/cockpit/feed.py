@@ -104,7 +104,6 @@ ALLOWED_COMMANDS = (
     ("git", "status"),
     ("bin/fm-fleet-snapshot.sh", "--json"),
     ("tmux", "capture-pane"),
-    ("gh", "pr view"),
 )
 
 # ---------------------------------------------------------------------------
@@ -1019,16 +1018,20 @@ _SNAPSHOT_STATE = {
 # Merged PRs
 # ---------------------------------------------------------------------------
 
-PR_STATE_TTL = 30 * 60
-_GITHUB_PR = re.compile(r"^https://github\.com/[\w.-]+/[\w.-]+/pull/\d+$")
 
-
-def merge_record(state_dir: Path, task_id: str, meta: dict[str, str]) -> float | None:
-    """When firstmate recorded this task's PR as merged, or None.
+def merge_record(
+    state_dir: Path,
+    task_id: str,
+    meta: dict[str, str],
+    events: list[StatusEvent] | None = None,
+) -> float | None:
+    """When firstmate's own records say this task's PR merged, or None.
 
     firstmate's PR poller writes ``state/<id>.pr-poll-merge-notified``
     (first line ``fm-pr-poll-merge-notified-v1``) when it sees the merge; its
-    mtime is the time it saw it. A ``merged=`` line in the meta also counts.
+    mtime is the time it saw it. A ``merged=`` line in the meta, or a status
+    line mentioning ``merge-landed``, also counts. ``merge-authority`` is
+    permission to merge, not a merge, and is never read.
     """
     marker = state_dir / f"{task_id}.pr-poll-merge-notified"
     head = read_text(marker, 256).splitlines()
@@ -1039,53 +1042,10 @@ def merge_record(state_dir: Path, task_id: str, meta: dict[str, str]) -> float |
         if merged.isdigit():
             return float(merged)
         return _iso_epoch(merged) or mtime(state_dir / f"{task_id}.meta")
+    for ev in reversed(events or []):
+        if "merge-landed" in ev.verb or "merge-landed" in ev.note:
+            return float(ev.at) if ev.at else mtime(state_dir / f"{task_id}.status")
     return None
-
-
-def gh_pr_state(url: str) -> dict[str, Any] | None:
-    """``gh pr view <url> --json state,mergedAt``: GitHub read only."""
-    if not _GITHUB_PR.match(url):
-        return None
-    try:
-        res = subprocess.run(
-            ["gh", "pr", "view", url, "--json", "state,mergedAt"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-            stdin=subprocess.DEVNULL,
-            env={**os.environ, "GH_PROMPT_DISABLED": "1", "NO_COLOR": "1"},
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if res.returncode != 0:
-        return None
-    try:
-        data = json.loads(res.stdout)
-    except ValueError:
-        return None
-    state = str(data.get("state") or "").upper()
-    if state not in ("OPEN", "MERGED", "CLOSED"):
-        return None
-    return {"state": state, "merged_at": _iso_epoch(data.get("mergedAt"))}
-
-
-class PrStates:
-    """Cached PR states: merged or closed answers forever, the rest 30 minutes."""
-
-    def __init__(self, ttl: float = PR_STATE_TTL, fetch=gh_pr_state) -> None:
-        self._ttl = ttl
-        self._fetch = fetch
-        self._cache: dict[str, tuple[float, bool, dict[str, Any] | None]] = {}
-
-    def state(self, url: str, now: float) -> dict[str, Any] | None:
-        hit = self._cache.get(url)
-        if hit is not None and (hit[1] or now - hit[0] < self._ttl):
-            return hit[2]
-        value = self._fetch(url)
-        final = value is not None and value["state"] in ("MERGED", "CLOSED")
-        self._cache[url] = (now, final, value)
-        return value
 
 
 @dataclass
@@ -1101,8 +1061,6 @@ class FeedConfig:
     claude_projects: Path | None = None
     # Read git status in ship worktrees for the Changes panel.
     read_git: bool = True
-    # Ask GitHub (read only, cached) whether a task's PR merged.
-    github: "PrStates | None" = None
 
 
 def local_tz_name() -> str | None:
@@ -1297,12 +1255,7 @@ def build_fleet(
         # closed, unless the agent is still at work or asking for something.
         finished_at: float | None = None
         if not closed and state not in ("working", "needs", "blocked"):
-            finished_at = merge_record(state_dir, task_id, meta)
-            if finished_at is None and not client and cfg.github is not None:
-                any_pr = _latest_pr(events, row)
-                st = cfg.github.state(any_pr, now) if any_pr else None
-                if st is not None and st["state"] == "MERGED":
-                    finished_at = st["merged_at"] or now
+            finished_at = merge_record(state_dir, task_id, meta, events)
             if finished_at is not None:
                 closed = True
                 if now - finished_at > FINISHED_WINDOW_DAYS * 86400:
@@ -1762,8 +1715,9 @@ class SnapshotPoller:
 TERMINAL_LINES = 400
 TERMINAL_EVERY = 2.0
 TERMINAL_TIMEOUT = 3
-# A tab that stopped asking for this long no longer gets captures.
-DEMAND_TTL = 15.0
+# Agents mirrored at once, and how recent "live" activity must be.
+TERMINAL_MAX = 5
+TERMINAL_ACTIVE_SECONDS = 10 * 60
 # A mirror file nobody asked for in this long is removed.
 TERMINAL_KEEP = 120.0
 
@@ -1810,50 +1764,44 @@ def capture_pane(target: str, lines: int = TERMINAL_LINES) -> list[str] | None:
     return [scrub(r) for r in rows[-lines:]]
 
 
-def mirror_targets(fleet: dict[str, Any]) -> dict[str, str]:
-    """Agents whose pane may be mirrored: own projects, still open, with a window.
+def mirror_targets(
+    fleet: dict[str, Any],
+    now: float | None = None,
+    limit: int = TERMINAL_MAX,
+    active_for: float = TERMINAL_ACTIVE_SECONDS,
+) -> dict[str, str]:
+    """Live own-project agents whose pane is mirrored, most recent first.
 
+    An agent is live when it is working, or still open (not closed, not done)
+    with activity in the last ``active_for`` seconds. At most ``limit``.
     Client projects never carry a window in the fleet, so they never qualify.
     """
-    out: dict[str, str] = {}
+    now = time.time() if now is None else now
+    picked: list[tuple[float, str, str]] = []
     for a in fleet.get("agents") or []:
         if a.get("client") or a.get("closed") or a.get("state") == "done":
             continue
         win = a.get("window")
-        if win and a.get("id"):
-            out[a["id"]] = win
-    return out
-
-
-def read_demand(demand_dir: Path, now: float, ttl: float = DEMAND_TTL) -> set[str]:
-    """Agent ids a browser tab asked to mirror within the last ``ttl`` seconds."""
-    wanted: set[str] = set()
-    try:
-        entries = list(os.scandir(demand_dir))
-    except OSError:
-        return wanted
-    for e in entries:
-        if not re.match(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,159}$", e.name):
+        if not win or not a.get("id"):
             continue
-        try:
-            if now - e.stat().st_mtime <= ttl:
-                wanted.add(e.name)
-        except OSError:
+        last = float(a.get("last_activity") or 0)
+        if a.get("state") != "working" and now - last > active_for:
             continue
-    return wanted
+        picked.append((last, a["id"], win))
+    picked.sort(key=lambda t: (-t[0], t[1]))
+    return {tid: win for _, tid, win in picked[:limit]}
 
 
 class TerminalMirror:
-    """Captures the panes browser tabs ask for, about every two seconds.
+    """Captures the panes of live own-project agents, about every two seconds.
 
     ``targets`` is refreshed by the main feed loop (agent id to tmux window,
-    own projects only). Each tick reads the demand folder Seneca touches and
-    writes ``terminals/<id>.json`` for the demanded, mirrorable agents.
+    see ``mirror_targets``). Each tick writes ``terminals/<id>.json`` for them.
+    Nothing comes back from Seneca: the container only reads those files.
     """
 
-    def __init__(self, out_dir: Path, demand_dir: Path, every: float = TERMINAL_EVERY):
+    def __init__(self, out_dir: Path, every: float = TERMINAL_EVERY):
         self.out_dir = out_dir
-        self.demand_dir = demand_dir
         self.every = every
         self._lock = threading.Lock()
         self._targets: dict[str, str] = {}
@@ -1873,7 +1821,7 @@ class TerminalMirror:
         with self._lock:
             targets = dict(self._targets)
         written = []
-        for tid in sorted(read_demand(self.demand_dir, now) & set(targets)):
+        for tid in sorted(targets):
             last = self._last.get(tid)
             if last is not None and now - last[0] < self.every:
                 continue
@@ -1927,16 +1875,6 @@ class TerminalMirror:
             time.sleep(0.5)
 
 
-def prepare_demand_dir(path: Path) -> None:
-    """Create the folder Seneca's container touches to ask for a mirror.
-
-    Mode 1733: other users (the container's) may create entries but not list
-    or delete others'. Only file names are read, never contents.
-    """
-    path.mkdir(parents=True, exist_ok=True)
-    os.chmod(path, 0o1733)
-
-
 def run(cfg: FeedConfig, args: argparse.Namespace) -> int:
     assert_safe_out_dir(cfg.out_dir, cfg.fm_home)
     cfg.out_dir.mkdir(parents=True, exist_ok=True)
@@ -1949,10 +1887,7 @@ def run(cfg: FeedConfig, args: argparse.Namespace) -> int:
         poller.start()
     mirror = None
     if not args.no_terminals and not args.once:
-        demand_dir = Path(args.demand_dir).expanduser()
-        assert_safe_out_dir(demand_dir, cfg.fm_home)
-        prepare_demand_dir(demand_dir)
-        mirror = TerminalMirror(cfg.out_dir, demand_dir)
+        mirror = TerminalMirror(cfg.out_dir)
         mirror.start()
 
     def feed_once() -> None:
@@ -2024,18 +1959,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Claude Code transcripts folder; 'none' leaves conversations out",
     )
     p.add_argument("--no-git", action="store_true", help="skip worktree changes")
-    p.add_argument(
-        "--no-github", action="store_true", help="never ask GitHub if a PR merged"
-    )
     p.add_argument("--salt-file", default=str(default_salt_file()))
-    p.add_argument(
-        "--demand-dir",
-        default=os.environ.get(
-            "OPENSENECA_COCKPIT_DEMAND_DIR",
-            str(home / ".local" / "share" / "openseneca" / "cockpit-demand"),
-        ),
-        help="folder Seneca touches to ask for a live terminal mirror",
-    )
     p.add_argument(
         "--no-terminals", action="store_true", help="never mirror tmux panes"
     )
@@ -2065,7 +1989,6 @@ def config_from_args(args: argparse.Namespace) -> FeedConfig:
         if args.claude_projects == "none"
         else Path(args.claude_projects).expanduser(),
         read_git=not args.no_git,
-        github=None if args.no_github else PrStates(),
     )
 
 

@@ -1,10 +1,11 @@
-"""Live terminal mirror: view only tmux reads, on demand, own projects only."""
+"""Live terminal mirror: view only tmux reads of live own-project agents."""
 
 from __future__ import annotations
 
 import json
 import os
 import subprocess
+import time
 
 import pytest
 
@@ -14,8 +15,6 @@ from openjarvis.cockpit.feed import (
     TmuxRefused,
     capture_pane,
     mirror_targets,
-    prepare_demand_dir,
-    read_demand,
 )
 
 FAKE_TMUX = """#!/bin/sh
@@ -64,6 +63,9 @@ def test_capture_keeps_colours_and_redacts_secrets(fake_tmux):
     assert capture_pane("bad target; rm -rf /") is None
 
 
+NOW = 1_800_000_000
+
+
 def test_mirror_targets_exclude_client_and_finished_work():
     fleet = {
         "agents": [
@@ -74,23 +76,25 @@ def test_mirror_targets_exclude_client_and_finished_work():
             {"id": "n", "state": "quiet"},
         ]
     }
-    assert mirror_targets(fleet) == {"a": "firstmate:fm-a"}
+    assert mirror_targets(fleet, NOW) == {"a": "firstmate:fm-a"}
 
 
-def test_demand_folder_mode_and_ttl(tmp_path):
-    demand = tmp_path / "demand"
-    prepare_demand_dir(demand)
-    assert demand.stat().st_mode & 0o7777 == 0o1733
-    (demand / "a").touch()
-    (demand / "old").touch()
-    os.utime(demand / "old", (1, 1))
-    (demand / ".hidden").touch()
-    now = (demand / "a").stat().st_mtime
-    assert read_demand(demand, now + 5) == {"a"}
-    assert read_demand(demand, now + 60) == set()
+def test_mirror_targets_are_live_agents_most_recent_first_capped():
+    agents = [
+        {"id": "w", "window": "s:w", "state": "working", "last_activity": NOW - 3600},
+        {"id": "q", "window": "s:q", "state": "quiet", "last_activity": NOW - 60},
+        {"id": "n", "window": "s:n", "state": "needs", "last_activity": NOW - 300},
+        {"id": "old", "window": "s:old", "state": "quiet", "last_activity": NOW - 700},
+    ]
+    assert list(mirror_targets({"agents": agents}, NOW)) == ["q", "n", "w"]
+    many = [
+        {"id": f"a{i}", "window": f"s:{i}", "state": "working", "last_activity": t}
+        for i, t in enumerate(NOW - j for j in range(8))
+    ]
+    assert list(mirror_targets({"agents": many}, NOW)) == ["a0", "a1", "a2", "a3", "a4"]
 
 
-def test_mirror_captures_only_what_a_tab_asked_for(tmp_path, fake_tmux, monkeypatch):
+def test_mirror_captures_its_targets_only(tmp_path, fake_tmux, monkeypatch):
     seen: list[list[str]] = []
     real_run = subprocess.run
 
@@ -99,13 +103,10 @@ def test_mirror_captures_only_what_a_tab_asked_for(tmp_path, fake_tmux, monkeypa
         return real_run(cmd, *a, **kw)
 
     monkeypatch.setattr(feed.subprocess, "run", spy)
-    out, demand = tmp_path / "out", tmp_path / "demand"
-    prepare_demand_dir(demand)
-    mirror = TerminalMirror(out, demand, every=2.0)
-    mirror.set_targets({"a": "firstmate:fm-a", "b": "firstmate:fm-b"})
-    (demand / "a").touch()
-    (demand / "zzz").touch()  # not a mirrorable agent
-    now = (demand / "a").stat().st_mtime
+    out = tmp_path / "out"
+    mirror = TerminalMirror(out, every=2.0)
+    mirror.set_targets({"a": "firstmate:fm-a"})
+    now = time.time()
     assert mirror.tick(now) == ["a"]
     data = json.loads((out / "terminals" / "a.json").read_text())
     assert data["schema"] == feed.TERMINAL_SCHEMA and data["window"] == "firstmate:fm-a"
@@ -118,26 +119,9 @@ def test_mirror_captures_only_what_a_tab_asked_for(tmp_path, fake_tmux, monkeypa
     mirror.set_targets({"b": "firstmate:fm-b"})
     mirror.tick(now + 3)
     assert not (out / "terminals" / "a.json").exists()
+    assert (out / "terminals" / "b.json").exists()
 
 
-def test_demand_dir_inside_firstmate_home_is_refused(tmp_path):
-    home = tmp_path / "fm"
-    home.mkdir()
-    args = feed.parse_args(
-        [
-            "--firstmate",
-            str(home),
-            "--out",
-            str(tmp_path / "out"),
-            "--demand-dir",
-            str(home / "state" / "demand"),
-            "--salt-file",
-            str(tmp_path / "salt"),
-            "--no-snapshot",
-            "--claude-projects",
-            "none",
-        ]
-    )
+def test_demand_dir_option_is_gone():
     with pytest.raises(SystemExit):
-        feed.run(feed.config_from_args(args), args)
-    assert not (home / "state").exists()
+        feed.parse_args(["--demand-dir", "/tmp/x"])

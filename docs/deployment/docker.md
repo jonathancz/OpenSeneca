@@ -146,7 +146,7 @@ The first start downloads the faster-whisper `small` and Kokoro weights into the
 
 ### Crew cockpit
 
-`docker-compose.cockpit.yml` mounts the folder the host cockpit feeder writes (`OPENSENECA_COCKPIT_DIR`, default `~/.local/share/openseneca/cockpit`) read only into `jarvis`, for the read only Crew page, plus a small demand folder (`OPENSENECA_COCKPIT_DEMAND_DIR`, default `~/.local/share/openseneca/cockpit-demand`) where Seneca drops empty marker files to ask the feeder for a view only terminal mirror. Start the feeder first so both folders exist with the right owner and mode. See [`scripts/cockpit-feed/README.md`](https://github.com/jonathancz/OpenSeneca/blob/main/scripts/cockpit-feed/README.md) for the feeder and how to start the stack with it.
+`docker-compose.cockpit.yml` mounts the folder the host cockpit feeder writes (`OPENSENECA_COCKPIT_DIR`, default `~/.local/share/openseneca/cockpit`) read only into `jarvis`, for the read only Crew page and its view only terminal mirrors; it is the only cockpit mount. See [`scripts/cockpit-feed/README.md`](https://github.com/jonathancz/OpenSeneca/blob/main/scripts/cockpit-feed/README.md) for the feeder and how to start the stack with it.
 
 ## GPU Overrides
 

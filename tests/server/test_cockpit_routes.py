@@ -28,7 +28,6 @@ def make_app(tmp_path: Path, **kw) -> FastAPI:
         cockpit_dir=tmp_path / "cockpit",
         state_path=tmp_path / "data" / "nudges.json",
         start_nudges=False,
-        demand_dir=tmp_path / "demand",
         **kw,
     )
     return app
@@ -197,9 +196,8 @@ def test_live_channel_requires_the_api_key(tmp_path):
         assert ws.receive_json()["type"] == "hello"
 
 
-def test_terminal_mirror_is_asked_for_and_served(tmp_path):
+def test_terminal_mirror_is_served_read_only(tmp_path):
     client = TestClient(make_app(tmp_path))
-    (tmp_path / "demand").mkdir()
     write(
         tmp_path / "cockpit",
         "fleet.json",
@@ -212,12 +210,9 @@ def test_terminal_mirror_is_asked_for_and_served(tmp_path):
             ],
         },
     )
+    before = sorted(p.relative_to(tmp_path) for p in tmp_path.rglob("*"))
     body = client.get("/v1/cockpit/agents/alpha/terminal").json()
-    assert body == {
-        "available": False,
-        "reason": "Waiting for the first capture from the feeder.",
-    }
-    assert (tmp_path / "demand" / "alpha").is_file()
+    assert body["available"] is False and "No live capture" in body["reason"]
     write(
         tmp_path / "cockpit",
         "terminals/alpha.json",
@@ -233,15 +228,8 @@ def test_terminal_mirror_is_asked_for_and_served(tmp_path):
     assert client.get("/v1/cockpit/agents/alpha/terminal").json()["available"] is False
     for other in ("client-x", "nowin", "ghost", "..%2Fx"):
         assert client.get(f"/v1/cockpit/agents/{other}/terminal").status_code == 404
-    assert sorted(p.name for p in (tmp_path / "demand").iterdir()) == ["alpha"]
-
-
-def test_terminal_without_a_writable_demand_folder_says_so(tmp_path):
-    client = TestClient(make_app(tmp_path))
-    write(
-        tmp_path / "cockpit",
-        "fleet.json",
-        {"agents": [{"id": "alpha", "window": "firstmate:fm-alpha"}]},
-    )
-    body = client.get("/v1/cockpit/agents/alpha/terminal").json()
-    assert body["available"] is False and "demand folder" in body["reason"]
+    after = sorted(p.relative_to(tmp_path) for p in tmp_path.rglob("*"))
+    assert [p for p in after if p not in before] == [
+        Path("cockpit/terminals"),
+        Path("cockpit/terminals/alpha.json"),
+    ]
