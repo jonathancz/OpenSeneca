@@ -64,6 +64,19 @@ export function startCrewLive(deps: CrewLiveDeps): () => void {
     }, pollMs);
   };
 
+  const goneDown = () => {
+    connected = false;
+    socket = null;
+    retry += 1;
+    schedulePoll();
+    if (reconnectTimer != null) return;
+    const delay = Math.min(maxBackoffMs, 1000 * 2 ** Math.min(retry - 1, 5));
+    reconnectTimer = setTimer(() => {
+      reconnectTimer = null;
+      connect();
+    }, delay);
+  };
+
   const connect = () => {
     if (stopped) return;
     let opened: LiveSocket | null = null;
@@ -88,25 +101,25 @@ export function startCrewLive(deps: CrewLiveDeps): () => void {
         },
         () => {
           if (stopped) return;
-          connected = false;
-          socket = null;
-          retry += 1;
-          schedulePoll();
-          const delay = Math.min(maxBackoffMs, 1000 * 2 ** Math.min(retry - 1, 5));
-          reconnectTimer = setTimer(() => {
-            reconnectTimer = null;
-            connect();
-          }, delay);
+          goneDown();
         },
       );
     } catch {
       opened = null;
     }
-    socket = opened;
-    if (!opened) {
-      retry += 1;
-      schedulePoll();
+    if (stopped) {
+      opened?.close();
+      return;
     }
+    if (!opened) {
+      goneDown();
+      return;
+    }
+    if (!connected && reconnectTimer != null) {
+      opened.close();
+      return;
+    }
+    socket = opened;
   };
 
   refresh();

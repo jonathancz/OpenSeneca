@@ -6,6 +6,7 @@ import {
   type CrewWait,
   agoLabel,
   boardColumns,
+  boardView,
   countWord,
   crewBadgeCount,
   formatAge,
@@ -184,18 +185,42 @@ describe('board', () => {
     expect(col('queued').total).toBe(12);
   });
 
-  it('shows live work first, then quiet agents and rows with no agent', () => {
-    expect(col('progress').cards.map((c) => c.id)).toEqual([
-      'a-w-new',
-      'a-cl',
-      'a-w-old',
-      'a-p',
-      'a-q',
-      'f-orphan',
-    ]);
+  it('shows live work first, then recent quiet agents, never stalled work', () => {
+    expect(col('progress').cards.map((c) => c.id)).toEqual(['a-w-new', 'a-cl', 'a-w-old', 'a-p']);
     const old = col('progress').cards[2];
     expect(old).toMatchObject({ project: 'NextBranch', stateLabel: 'Working', line: 'building the board' });
-    expect(col('progress').cards[4].line).toBe('no status line yet');
+    expect(boardView(f, NOW_MS).stalled.cards.map((c) => [c.id, c.line])).toEqual([
+      ['a-q', 'no status line yet'],
+      ['f-orphan', null],
+    ]);
+  });
+
+  it('moves work with no activity for over a day to stalled, oldest first', () => {
+    const g = fleet({
+      agents: [
+        agent({ id: 'run', state: 'working', last_activity: NOW - 5 * DAY }),
+        agent({ id: 'q-fresh', state: 'quiet', last_activity: NOW - DAY + 60 }),
+        agent({ id: 'q-old', state: 'quiet', last_activity: NOW - DAY - 60 }),
+        agent({ id: 'f-old', state: 'failed', last_activity: NOW - 9 * DAY }),
+        agent({ id: 'p-old', state: 'paused', last_activity: NOW - 2 * DAY }),
+        agent({ id: 'unknown', state: 'quiet', last_activity: null, started_at: null }),
+        agent({ id: 'started', state: 'quiet', last_activity: null, started_at: NOW - 3600 }),
+        agent({ id: 'gone', state: 'failed', last_activity: NOW - 9 * DAY, closed: true }),
+        agent({ id: 'cl', state: 'paused', client: true, space: 'belit', title: 'belit task', last_activity: NOW - 3 * DAY, status_line: 'secret' }),
+      ],
+      backlog: [
+        item({ id: 'fresh', section: 'in_flight', since: NOW - 3600 }),
+        item({ id: 'old', section: 'in_flight', since: NOW - 4 * DAY }),
+      ],
+    });
+    const { columns, stalled } = boardView(g, NOW_MS);
+    const progress = columns.find((c) => c.id === 'progress')!;
+    expect(progress.cards.map((c) => c.id)).toEqual(['a-run', 'a-started', 'a-q-fresh', 'f-fresh']);
+    expect(stalled.title).toBe('Stalled');
+    expect(stalled.cards.map((c) => c.id)).toEqual(['a-unknown', 'a-f-old', 'f-old', 'a-cl', 'a-p-old', 'a-q-old']);
+    expect(stalled.total).toBe(6);
+    const client = stalled.cards.find((c) => c.client)!;
+    expect(client).toMatchObject({ title: 'belit task', project: 'belit', stateLabel: 'Paused', line: null, link: null });
   });
 
   it('lists PRs, ready branches and reports for review, never closed work', () => {

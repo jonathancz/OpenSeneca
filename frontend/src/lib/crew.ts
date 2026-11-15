@@ -303,7 +303,7 @@ export function ledeSentence(fleet: CrewFleet, nowMs: number): LedePart[] {
 // The board: Queued, In progress, Ready for review, Waiting on you, Finished today
 // ---------------------------------------------------------------------------
 
-export type ColumnId = 'queued' | 'progress' | 'review' | 'waiting' | 'finished';
+export type ColumnId = 'queued' | 'progress' | 'review' | 'waiting' | 'finished' | 'stalled';
 
 export interface BoardLink {
   url: string;
@@ -353,7 +353,31 @@ function dayEpoch(date: string | null): number | null {
   return m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) / 1000 : null;
 }
 
-export function boardColumns(fleet: CrewFleet): BoardColumn[] {
+/** No activity for longer than this and work that is not running leaves In progress. */
+export const STALLED_AFTER = 24 * 60 * 60;
+
+function lastSign(a: Pick<CrewAgent, 'last_activity' | 'started_at'>): number | null {
+  return a.last_activity ?? a.started_at;
+}
+
+function isStale(epoch: number | null, nowMs: number): boolean {
+  return epoch == null || nowMs / 1000 - epoch > STALLED_AFTER;
+}
+
+/** Live work: a running agent, or anything else with activity in the last day. */
+export function isLiveAgent(a: CrewAgent, nowMs: number): boolean {
+  return a.state === 'working' || !isStale(lastSign(a), nowMs);
+}
+
+/**
+ * The board's five columns, plus `stalled`: quiet, paused or failed work and
+ * in flight rows with no agent, untouched for over a day. Stalled work never
+ * sits in In progress; the page shows it in a collapsed group, oldest first.
+ */
+export function boardView(
+  fleet: CrewFleet,
+  nowMs: number = fleet.generated_at * 1000,
+): { columns: BoardColumn[]; stalled: BoardColumn } {
   const project = (id: string) => spaceName(fleet, id);
 
   const queuedItems = fleet.backlog.filter((b) => b.section === 'queued');
@@ -369,36 +393,44 @@ export function boardColumns(fleet: CrewFleet): BoardColumn[] {
     link: b.client ? null : prLink(b.pr),
   }));
 
-  const progressAgents = fleet.agents
-    .filter((a) => a.state in PROGRESS_RANK && !a.closed)
-    .sort((a, b) => {
-      const r = (PROGRESS_RANK[a.state] ?? 9) - (PROGRESS_RANK[b.state] ?? 9);
-      return r !== 0 ? r : (b.last_activity ?? 0) - (a.last_activity ?? 0);
-    });
-  const progress: BoardCard[] = progressAgents.map((a) => ({
+  const agentCard = (a: CrewAgent): BoardCard => ({
     id: `a-${a.id}`,
     title: a.title,
     project: project(a.space),
     client: a.client,
     glyph: a.state,
     stateLabel: STATE_LABEL[a.state],
-    since: a.last_activity,
+    since: lastSign(a),
     line: a.client ? null : a.status_line || a.quiet_note,
     link: a.client ? null : prLink(a.pr),
-  }));
-  for (const b of fleet.backlog.filter((x) => x.section === 'in_flight')) {
-    progress.push({
-      id: `f-${b.id}`,
-      title: b.title,
-      project: project(b.space),
-      client: b.client,
-      glyph: 'paused',
-      stateLabel: 'In flight, no live agent',
-      since: b.since,
-      line: null,
-      link: b.client ? null : prLink(b.pr),
+  });
+  const flightCard = (b: CrewBacklogItem): BoardCard => ({
+    id: `f-${b.id}`,
+    title: b.title,
+    project: project(b.space),
+    client: b.client,
+    glyph: 'paused',
+    stateLabel: 'In flight, no live agent',
+    since: b.since,
+    line: null,
+    link: b.client ? null : prLink(b.pr),
+  });
+
+  const unfinished = fleet.agents
+    .filter((a) => a.state in PROGRESS_RANK && !a.closed)
+    .sort((a, b) => {
+      const r = (PROGRESS_RANK[a.state] ?? 9) - (PROGRESS_RANK[b.state] ?? 9);
+      return r !== 0 ? r : (lastSign(b) ?? 0) - (lastSign(a) ?? 0);
     });
-  }
+  const flights = fleet.backlog.filter((x) => x.section === 'in_flight');
+  const progress: BoardCard[] = [
+    ...unfinished.filter((a) => isLiveAgent(a, nowMs)).map(agentCard),
+    ...flights.filter((b) => !isStale(b.since, nowMs)).map(flightCard),
+  ];
+  const stalledCards: BoardCard[] = [
+    ...unfinished.filter((a) => !isLiveAgent(a, nowMs)).map(agentCard),
+    ...flights.filter((b) => isStale(b.since, nowMs)).map(flightCard),
+  ].sort((a, b) => (a.since ?? 0) - (b.since ?? 0));
 
   const review: BoardCard[] = readyForReview(fleet).map((a) => {
     let line: string | null = null;
@@ -447,11 +479,18 @@ export function boardColumns(fleet: CrewFleet): BoardColumn[] {
       link: f.client ? null : prLink(f.pr),
     }));
 
-  return [
-    { id: 'queued', title: 'Queued', cards: queued, total: Math.max(fleet.queued_total ?? 0, queued.length) },
-    { id: 'progress', title: 'In progress', cards: progress, total: progress.length },
-    { id: 'review', title: 'Ready for review', cards: review, total: review.length },
-    { id: 'waiting', title: 'Waiting on you', cards: waiting, total: waiting.length },
-    { id: 'finished', title: 'Finished today', cards: finished, total: finished.length },
-  ];
+  return {
+    columns: [
+      { id: 'queued', title: 'Queued', cards: queued, total: Math.max(fleet.queued_total ?? 0, queued.length) },
+      { id: 'progress', title: 'In progress', cards: progress, total: progress.length },
+      { id: 'review', title: 'Ready for review', cards: review, total: review.length },
+      { id: 'waiting', title: 'Waiting on you', cards: waiting, total: waiting.length },
+      { id: 'finished', title: 'Finished today', cards: finished, total: finished.length },
+    ],
+    stalled: { id: 'stalled', title: 'Stalled', cards: stalledCards, total: stalledCards.length },
+  };
+}
+
+export function boardColumns(fleet: CrewFleet, nowMs?: number): BoardColumn[] {
+  return boardView(fleet, nowMs).columns;
 }

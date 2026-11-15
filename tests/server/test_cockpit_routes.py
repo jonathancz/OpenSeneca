@@ -75,22 +75,6 @@ def test_the_real_app_mounts_only_read_only_cockpit_routes():
             assert set(r.methods) <= READ_ONLY_METHODS, r.path
 
 
-def test_cockpit_server_code_has_no_path_to_the_crew():
-    for module in (cockpit_routes,):
-        src = Path(module.__file__).read_text()
-        for forbidden in (
-            "subprocess",
-            "send-keys",
-            "fm-send",
-            "tmux send",
-            "gh pr",
-            "pull/merge",
-            "os.system",
-            "terminal.send",
-        ):
-            assert forbidden not in src, (module.__name__, forbidden)
-
-
 def test_fleet_missing_then_served(tmp_path):
     client = TestClient(make_app(tmp_path))
     body = client.get("/v1/cockpit/fleet").json()

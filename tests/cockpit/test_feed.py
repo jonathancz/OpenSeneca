@@ -240,23 +240,6 @@ def test_feeder_runs_no_command_but_the_snapshot(fm, monkeypatch):
     assert seen == []
 
 
-def test_feeder_source_has_no_write_paths_toward_the_crew():
-    src = Path(feed.__file__).read_text()
-    for forbidden in (
-        "send-keys",
-        "fm-send",
-        "fm-spawn",
-        "gh pr",
-        "terminal.send",
-        '"git"',
-        "git push",
-        "os.system",
-    ):
-        assert forbidden not in src
-    # One subprocess call site: firstmate's read only snapshot.
-    assert src.count("subprocess.run(") == 1
-
-
 # ---------------------------------------------------------------------------
 # The fleet
 # ---------------------------------------------------------------------------

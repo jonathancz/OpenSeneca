@@ -89,6 +89,44 @@ describe('startCrewLive', () => {
     h.stop();
   });
 
+  it('keeps retrying the socket with backoff when connecting fails', () => {
+    const clock = fakeTimers();
+    let attempts = 0;
+    let refreshes = 0;
+    const live: { onMessage: (m: unknown) => void }[] = [];
+    const stop = startCrewLive({
+      connect: (onMessage) => {
+        attempts++;
+        if (attempts === 1) throw new Error('no socket');
+        if (attempts === 2) return null;
+        live.push({ onMessage });
+        return { close: () => {} };
+      },
+      refresh: async () => {
+        refreshes++;
+      },
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+      pollMs: 60_000,
+      debounceMs: 400,
+    });
+    expect(attempts).toBe(1);
+    clock.advance(1000);
+    expect(attempts).toBe(2); // retried after 1 s
+    clock.advance(1999);
+    expect(attempts).toBe(2);
+    clock.advance(1);
+    expect(attempts).toBe(3); // then after 2 s, and this one opens
+    live[0].onMessage({ type: 'hello' });
+    clock.advance(400);
+    expect(refreshes).toBe(2); // caught up once the socket is back
+    clock.advance(10 * 60_000);
+    expect(attempts).toBe(3);
+    expect(refreshes).toBe(2); // no more polling or retries while live
+    stop();
+    expect(clock.pending()).toBe(0);
+  });
+
   it('stops cleanly', () => {
     const h = harness();
     h.stop();

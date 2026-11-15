@@ -5,8 +5,10 @@ import {
   type BoardColumn,
   type CrewFleet,
   ageOf,
-  boardColumns,
+  boardView,
+  countWord,
   formatAge,
+  plural,
   ledeSentence,
 } from '../../lib/crew';
 import { StateGlyph } from './parts';
@@ -88,7 +90,28 @@ const EMPTY: Record<BoardColumn['id'], string> = {
   review: 'Nothing waits for review.',
   waiting: 'Nothing waits on you.',
   finished: 'Nothing finished yet today.',
+  stalled: 'Nothing has stalled.',
 };
+
+function Stalled({ column, nowMs }: { column: BoardColumn; nowMs: number }) {
+  if (column.total === 0) return null;
+  return (
+    <details className="cw-stalled" aria-label={column.title}>
+      <summary className="cw-stalled-head">
+        {column.title}
+        <span className="cw-count">{column.total}</span>
+        <span className="cw-stalled-note">
+          {countWord(column.total)} {plural(column.total, 'task has', 'tasks have')} had no activity for over a day
+        </span>
+      </summary>
+      <div className="cw-stalled-cards">
+        {column.cards.map((c) => (
+          <Card key={c.id} card={c} column={column.id} nowMs={nowMs} />
+        ))}
+      </div>
+    </details>
+  );
+}
 
 export function CrewBoard({
   fleet,
@@ -101,7 +124,7 @@ export function CrewBoard({
   ageSeconds: number | null;
   stale: boolean;
 }) {
-  const columns = boardColumns(fleet);
+  const { columns, stalled } = boardView(fleet, nowMs);
   const lede = ledeSentence(fleet, nowMs);
   return (
     <>
@@ -127,6 +150,7 @@ export function CrewBoard({
           <Column key={c.id} column={c} nowMs={nowMs} />
         ))}
       </div>
+      <Stalled column={stalled} nowMs={nowMs} />
       <p className="cw-foot">
         Times show how long since each task's last activity. Client projects show their name and state only.
       </p>

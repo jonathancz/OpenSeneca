@@ -44,6 +44,17 @@
 .cw-more { width: 100%; height: 30px; border-radius: 999px; border: 1px solid var(--color-border); font-size: 12px; color: var(--color-text-secondary); cursor: pointer; transition: border-color 140ms var(--ease), color 140ms var(--ease); }
 .cw-more:hover { border-color: var(--color-border-strong); color: var(--color-text); }
 
+/* Stalled: work untouched for over a day, collapsed under the board. */
+.cw-stalled { max-width: 1480px; margin: 0 32px 24px; border-radius: var(--radius-xl); border: 1px dashed var(--color-rule); }
+@media (max-width: 767px) { .cw-stalled { margin: 0 16px 20px; } }
+.cw-stalled-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; padding: 12px 14px; font-size: 13px; color: var(--color-text-secondary); cursor: pointer; list-style: none; }
+.cw-stalled-head::-webkit-details-marker { display: none; }
+.cw-stalled-head::before { content: '▸'; font-size: 10px; color: var(--color-text-tertiary); transition: transform 140ms var(--ease); }
+.cw-stalled[open] .cw-stalled-head::before { transform: rotate(90deg); }
+.cw-stalled-head .cw-count { margin-left: 0; }
+.cw-stalled-note { margin-left: auto; font-size: 12px; color: var(--color-text-tertiary); }
+.cw-stalled-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; padding: 0 10px 10px; }
+
 .cw-card { border-radius: 12px; border: 1px solid var(--color-border); background: var(--card-surface); padding: 10px 12px 11px; min-width: 0; }
 .cw-card-top { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--color-text-tertiary); min-width: 0; }
 .cw-avatar { width: 18px; height: 18px; border-radius: 6px; display: grid; place-items: center; flex: none; font-size: 10px; font-weight: 500; color: var(--color-text); background: var(--color-bg-hover); border: 1px solid var(--color-border); }

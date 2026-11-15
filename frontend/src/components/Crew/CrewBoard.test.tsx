@@ -84,6 +84,22 @@ describe('CrewBoard', () => {
     expect(html).toContain('Read only. Decisions and merges happen in Claude Code.');
   });
 
+  it('collapses work with no activity for over a day under the board', () => {
+    const stuck: CrewFleet = {
+      ...fleet,
+      agents: [
+        ...fleet.agents,
+        { ...fleet.agents[1], id: 'old', title: 'Old quiet task', client: false, space: 'arbo', state: 'quiet', last_activity: NOW - 3 * 86400 },
+      ],
+    };
+    const out = renderToStaticMarkup(<CrewBoard fleet={stuck} nowMs={NOW * 1000} ageSeconds={12} stale={false} />);
+    expect(out).toMatch(/<details class="cw-stalled" aria-label="Stalled">/);
+    expect(out).toContain('aria-label="Old quiet task, NextBranch, Quiet"');
+    expect(out).toContain('>3d<');
+    expect(out.indexOf('Old quiet task')).toBeGreaterThan(out.indexOf('aria-label="Finished today"'));
+    expect(html).not.toContain('cw-stalled');
+  });
+
   it('shows client work by project and state only', () => {
     expect(html).toContain('aria-label="belit task, belit, Working"');
   });
