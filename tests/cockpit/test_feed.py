@@ -550,9 +550,9 @@ def test_unchanged_files_are_not_read_again(fm, monkeypatch):
     git_calls.clear()
     second = build_fleet(cfg_for(fm), now=NOW + 5, cache=cache)
     assert reads == [] and git_calls == []
-    assert second.transcripts["alpha"]["entries"] == first.transcripts["alpha"][
-        "entries"
-    ]
+    assert (
+        second.transcripts["alpha"]["entries"] == first.transcripts["alpha"]["entries"]
+    )
     assert second.changes["alpha"]["files"] == first.changes["alpha"]["files"]
 
     session = fm["projects"] / project_slug(str(fm["repo"])) / "sess.jsonl"
@@ -605,9 +605,7 @@ def test_closing_a_task_keeps_its_files_untouched(fm, monkeypatch):
     monkeypatch.setattr(
         feed, "trim_transcript", lambda *a, **k: pytest.fail("transcript read")
     )
-    monkeypatch.setattr(
-        feed, "read_changes", lambda *a, **k: pytest.fail("git read")
-    )
+    monkeypatch.setattr(feed, "read_changes", lambda *a, **k: pytest.fail("git read"))
     for step, use_cache in ((1, cache), (2, cache), (3, feed.FeedCache())):
         res = build_fleet(cfg_for(fm), now=NOW + step * 60, cache=use_cache)
         alpha = {a["id"]: a for a in res.fleet["agents"]}["alpha"]
@@ -615,9 +613,7 @@ def test_closing_a_task_keeps_its_files_untouched(fm, monkeypatch):
         assert alpha["has_transcript"] is True
         assert alpha["diff"] == open_alpha["diff"]
         assert alpha["last_activity"] >= open_alpha["last_activity"]
-        write_outputs(
-            fm["out"], res, previous if use_cache is cache else {}
-        )
+        write_outputs(fm["out"], res, previous if use_cache is cache else {})
         assert _output_state(fm["out"]) == before
 
 

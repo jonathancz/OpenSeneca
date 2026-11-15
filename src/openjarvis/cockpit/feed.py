@@ -687,9 +687,7 @@ def _git_dir(worktree: str) -> Path:
 
 def _git_signature(worktree: str) -> tuple:
     gitdir = _git_dir(worktree)
-    return tuple(
-        _stat_key(gitdir / name) for name in ("HEAD", "index", "logs/HEAD")
-    )
+    return tuple(_stat_key(gitdir / name) for name in ("HEAD", "index", "logs/HEAD"))
 
 
 class FeedCache:

@@ -219,12 +219,8 @@ def test_digest_names_quiet_tasks_only_up_to_a_week():
     )
     assert "Task old" not in text and "Task older" not in text
 
-    only_old = digest_message(
-        fleet(agents=[quiet("old", 8)]), None, now_epoch
-    )
-    assert only_old == (
-        "Crew digest: y 1 tareas paradas desde hace más de una semana."
-    )
+    only_old = digest_message(fleet(agents=[quiet("old", 8)]), None, now_epoch)
+    assert only_old == ("Crew digest: y 1 tareas paradas desde hace más de una semana.")
 
 
 def test_missed_digest_is_skipped_not_sent_late():
