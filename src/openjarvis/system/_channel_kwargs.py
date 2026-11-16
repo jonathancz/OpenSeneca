@@ -25,7 +25,7 @@ def _discord(c: Any) -> Dict[str, Any]:
         "max_voice_seconds": getattr(c, "max_voice_seconds", 120),
         "tts_backend": getattr(c, "tts_backend", "kokoro"),
         "voice_id": getattr(c, "voice_id", ""),
-        "voice_speed": getattr(c, "voice_speed", 1.2),
+        "voice_speed": getattr(c, "voice_speed", 1.0),
         "volume": getattr(c, "volume", 1.2),
         "stt_model": getattr(c, "stt_model", "small"),
         "stt_language": getattr(c, "stt_language", ""),

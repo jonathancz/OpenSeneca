@@ -1278,8 +1278,8 @@ class DiscordChannelConfig:
     # Outgoing voice (CPU). Empty voice_id uses the backend's default voice.
     tts_backend: str = "kokoro"
     voice_id: str = ""
-    # Kokoro at 1.0 is about 160 words per minute; 1.2 sounds brisker.
-    voice_speed: float = 1.2
+    # Kokoro's normal pace, about 160 words per minute.
+    voice_speed: float = 1.0
     # Gain on the synthesized voice (1.2 = 20% louder, about +1.6 dB), with a
     # soft limiter so peaks do not distort.
     volume: float = 1.2
@@ -2394,7 +2394,7 @@ default_agent = "simple"
 # dm_only = true
 # voice_replies = "mirror"  # "mirror", "always", "never"
 # max_voice_seconds = 120
-# voice_speed = 1.2  # Kokoro speaking rate for voice replies
+# voice_speed = 1.0  # Kokoro speaking rate for voice replies
 
 # [channel.slack]
 # bot_token = ""  # Or set SLACK_BOT_TOKEN env var
