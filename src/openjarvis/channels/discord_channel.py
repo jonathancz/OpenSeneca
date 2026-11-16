@@ -46,7 +46,7 @@ MAX_VOICE_BYTES = 25 * 1024 * 1024
 _SPOKEN_CHARS_PER_SECOND = 14
 # Aliases that address the first allowlisted user (the owner) by DM.
 _OWNER_ALIASES = ("discord", "captain")
-# Kokoro at 1.0 sounded slow to the owner (about 160 words per minute).
+# Kokoro's normal pace (about 160 words per minute); the owner preferred it to 1.2.
 DEFAULT_VOICE_SPEED = 1.0
 # The owner asked for the voice 20% louder (about +1.6 dB).
 DEFAULT_VOICE_VOLUME = 1.2

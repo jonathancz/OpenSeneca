@@ -1278,7 +1278,7 @@ class DiscordChannelConfig:
     # Outgoing voice (CPU). Empty voice_id uses the backend's default voice.
     tts_backend: str = "kokoro"
     voice_id: str = ""
-    # Kokoro at 1.0 is about 160 words per minute; 1.2 sounds brisker.
+    # Kokoro's normal pace, about 160 words per minute.
     voice_speed: float = 1.0
     # Gain on the synthesized voice (1.2 = 20% louder, about +1.6 dB), with a
     # soft limiter so peaks do not distort.
