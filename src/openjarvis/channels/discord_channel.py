@@ -47,7 +47,7 @@ _SPOKEN_CHARS_PER_SECOND = 14
 # Aliases that address the first allowlisted user (the owner) by DM.
 _OWNER_ALIASES = ("discord", "captain")
 # Kokoro at 1.0 sounded slow to the owner (about 160 words per minute).
-DEFAULT_VOICE_SPEED = 1.2
+DEFAULT_VOICE_SPEED = 1.0
 # The owner asked for the voice 20% louder (about +1.6 dB).
 DEFAULT_VOICE_VOLUME = 1.2
 _MAX_TRACKED_VOICE_MESSAGES = 256
@@ -114,7 +114,7 @@ class DiscordChannel(BaseChannel):
         Longest voice message accepted in, and produced out.
     tts_backend, voice_id, voice_speed:
         Text-to-speech settings for outgoing voice messages. Kokoro runs on
-        CPU; ``voice_speed`` 1.2 is a brisk conversational pace.
+        CPU; ``voice_speed`` 1.0 is its normal pace.
     volume:
         Gain applied to the synthesized voice before encoding (1.2 is about
         +1.6 dB), behind a soft limiter so peaks do not clip.

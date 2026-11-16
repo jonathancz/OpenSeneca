@@ -570,7 +570,7 @@ class TestVoiceOut:
         ch = DiscordChannel(bot_token="t", voice_id="bm_george", tts=tts)
         clip = ch.synthesize_voice("**Hello** from `Seneca`")
         tts.synthesize.assert_called_once_with(
-            "Hello from Seneca", voice_id="bm_george", speed=1.2, output_format="wav"
+            "Hello from Seneca", voice_id="bm_george", speed=1.0, output_format="wav"
         )
         assert clip.ogg.startswith(b"OggS")
         assert abs(clip.duration_secs - 1.0) < 0.1
@@ -588,7 +588,9 @@ class TestVoiceOut:
         tts = MagicMock(backend_id="kokoro")
         tts.synthesize.side_effect = RuntimeError("reached TTS")
         # 10 s at 14 chars/s is 140 chars at speed 1.0; 168 at speed 1.2.
-        ch = DiscordChannel(bot_token="t", tts=tts, max_voice_seconds=10)
+        ch = DiscordChannel(
+            bot_token="t", tts=tts, max_voice_seconds=10, voice_speed=1.2
+        )
         with pytest.raises(RuntimeError, match="reached TTS"):
             ch.synthesize_voice("x" * 160)
 
@@ -918,7 +920,7 @@ class TestConfigWiring:
         assert cfg.voice_replies == "mirror"
         assert cfg.max_voice_seconds == 120
         assert cfg.stt_model == "small"
-        assert cfg.voice_speed == 1.2
+        assert cfg.voice_speed == 1.0
         assert cfg.volume == 1.2
         assert cfg.preload_voice_models is True
 
